@@ -90,8 +90,8 @@ public:
 	vtkfile.begin_data("Permeability",CELL_DATA,SCALARS,FLOAT);
 	for (FiniteCellsIterator cell = Tri.finite_cells_begin(); cell != Tri.finite_cells_end(); ++cell) {
 		bool isDrawable = cell->info().isReal() && cell->vertex(0)->info().isReal() && cell->vertex(1)->info().isReal() && cell->vertex(2)->info().isReal()  && cell->vertex(3)->info().isReal();
-		if (isDrawable){vtkfile.write_data(cell->info().s);}
-	}
+	 if (isDrawable){vtkfile.write_data((cell->info().kNorm()[0] + cell->info().kNorm()[1] +cell->info().kNorm()[2] +cell->info().kNorm()[3]) / 4 );}
+        }  // rcaulk since .s was not working, trying to record the average permeability of each cell
 	vtkfile.end_data();}
 	else{
 	vtkfile.begin_data("Pressure",CELL_DATA,SCALARS,FLOAT);
@@ -176,7 +176,7 @@ void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, R
  	const CellHandle& cell2 = currentFacet.first->neighbor(currentFacet.second);
 	if ( Tri.is_infinite(cell1) || Tri.is_infinite(cell2)) cerr<<"Infinite cell found in trickPermeability, should be handled somehow, maybe"<<endl;
  	cell1->info().kNorm()[currentFacet.second]=cell2->info().kNorm()[Tri.mirror_index(cell1, currentFacet.second)] = pow((aperture+residualAperture),3);
-	cout << "Permeability successfully tricked" << endl;
+//	cout << "Permeability successfully tricked" << endl;
 	//For vtk recorder:
 	cell1->info().crack= 1;
 	cell2->info().crack= 1;
