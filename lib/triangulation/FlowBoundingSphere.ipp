@@ -662,12 +662,13 @@ vector<double> FlowBoundingSphere<Tesselation>::getConstrictions()
 {
 	RTriangulation& Tri = T[currentTes].Triangulation();
 	vector<double> constrictions;
-	for (FiniteFacetsIterator f_it=Tri.finite_facets_begin(); f_it != Tri.finite_facets_end();f_it++){
-		// in the periodic case, we retain only the facets incident to at least one non-ghost cell
-		// plus if one cell is ghost it must be facet->first (else they would appear twice) 
-		if ( f_it->first->info().isGhost ||  f_it->first->info().index == 0 || f_it->first->neighbor(f_it->second)->info().index == 0) continue;
-		constrictions.push_back(computeEffectiveRadius(f_it->first, f_it->second));
-	}
+	CellHandle neighbourCell; const FiniteCellsIterator& cellEnd = Tri.finite_cells_end();
+	for (FiniteCellsIterator cell = Tri.finite_cells_begin(); cell != cellEnd; cell++) {
+			if (cell->info().isGhost) continue;// retain only the cells with barycenter in the (0,0,0) period
+			for (int j=0; j<4; j++) {
+				neighbourCell = cell->neighbor(j);
+				if (cell->info().id < neighbourCell->info().id)
+					constrictions.push_back(computeEffectiveRadius(cell, j));}}
 	return constrictions;
 }
 
@@ -676,18 +677,21 @@ vector<Constriction> FlowBoundingSphere<Tesselation>::getConstrictionsFull()
 {
 	RTriangulation& Tri = T[currentTes].Triangulation();
 	vector<Constriction> constrictions;
-	for (FiniteFacetsIterator f_it=Tri.finite_facets_begin(); f_it != Tri.finite_facets_end();f_it++){
-		//in the periodic case, we retain only the facets incident to at least one non-ghost cell 
-		if ( f_it->first->info().isGhost ||  f_it->first->info().index == 0 || f_it->first->neighbor(f_it->second)->info().index == 0) continue;
-		vector<double> rn;
-		const CVector& normal = f_it->first->info().facetSurfaces[f_it->second];
-		if (!normal[0] && !normal[1] && !normal[2]) continue;
-		rn.push_back(computeEffectiveRadius(f_it->first, f_it->second));
-		rn.push_back(normal[0]);
-		rn.push_back(normal[1]);
-		rn.push_back(normal[2]);
-		Constriction cons (pair<int,int>(f_it->first->info().id,f_it->first->neighbor(f_it->second)->info().id),rn);
-		constrictions.push_back(cons);
+	CellHandle neighbourCell; const FiniteCellsIterator& cellEnd = Tri.finite_cells_end();
+	for (FiniteCellsIterator cell = Tri.finite_cells_begin(); cell != cellEnd; cell++) {
+			if (cell->info().isGhost) continue;// retain only the cells with barycenter in the (0,0,0) period
+			for (int j=0; j<4; j++) {
+				neighbourCell = cell->neighbor(j);
+				if (cell->info().id < neighbourCell->info().id) {
+					vector<double> rn;
+					const CVector& normal = cell->info().facetSurfaces[j];
+					if (!normal[0] && !normal[1] && !normal[2]) continue;
+					rn.push_back(computeEffectiveRadius(cell, j));
+					rn.push_back(normal[0]);
+					rn.push_back(normal[1]);
+					rn.push_back(normal[2]);
+					Constriction cons (pair<int,int>(cell->info().id,neighbourCell->info().id),rn);
+					constrictions.push_back(cons);}}
 	}
 	return constrictions;
 }
@@ -698,19 +702,31 @@ double FlowBoundingSphere<Tesselation>::computeEffectiveRadius(CellHandle cell, 
 	RTriangulation& Tri = T[currentTes].Triangulation();
         if (Tri.is_infinite(cell->neighbor(j))) return 0;
 
-	CVector B = cell->vertex(facetVertices[j][1])->point().point()-cell->vertex(facetVertices[j][0])->point().point();
+	Point pos[3]; //spheres pos
+	double r[3]; //spheres radius
+	for (int i=0; i<3; i++) {
+	  pos[i] = cell->vertex(facetVertices[j][i])->point().point();
+	  r[i] = sqrt(cell->vertex(facetVertices[j][i])->point().weight());}
+	
+	double reff=computeEffectiveRadiusByPosRadius(pos[0],r[0],pos[1],r[1],pos[2],r[2]);
+	if (reff<0) return 0;//happens very rarely, with bounding spheres most probably
+	//if the facet involves one ore more bounding sphere, we return R with a minus sign
+	if (cell->vertex(facetVertices[j][2])->info().isFictious || cell->vertex(facetVertices[j][1])->info().isFictious || cell->vertex(facetVertices[j][2])->info().isFictious) return -reff;
+	else return reff;
+}
+////compute inscribed radius independently by position and radius
+template <class Tesselation> 
+double FlowBoundingSphere<Tesselation>::computeEffectiveRadiusByPosRadius(const Point& posA, const double& rA, const Point& posB, const double& rB, const Point& posC, const double& rC)
+{
+	CVector B = posB - posA;
 	CVector x = B/sqrt(B.squared_length());
-	CVector C = cell->vertex(facetVertices[j][2])->point().point()-cell->vertex(facetVertices[j][0])->point().point();
+	CVector C = posC - posA;
 	CVector z = CGAL::cross_product(x,C);
 	CVector y = CGAL::cross_product(x,z);
 	y = y/sqrt(y.squared_length());
 
 	double b1[2]; b1[0] = B*x; b1[1] = B*y;
 	double c1[2]; c1[0] = C*x; c1[1] = C*y;
-
-	double rA = sqrt(cell->vertex(facetVertices[j][0])->point().weight());
-	double rB = sqrt(cell->vertex(facetVertices[j][1])->point().weight());
-	double rC = sqrt(cell->vertex(facetVertices[j][2])->point().weight());
 
 	double A = ((pow(rA,2))*(1-c1[0]/b1[0])+((pow(rB,2)*c1[0])/b1[0])-pow(rC,2)+pow(c1[0],2)+pow(c1[1],2)-((pow(b1[0],2)+pow(b1[1],2))*c1[0]/b1[0]))/(2*c1[1]-2*b1[1]*c1[0]/b1[0]);
 	double BB = (rA-rC-((rA-rB)*c1[0]/b1[0]))/(c1[1]-b1[1]*c1[0]/b1[0]);
@@ -725,10 +741,7 @@ double FlowBoundingSphere<Tesselation>::computeEffectiveRadius(CellHandle cell, 
 
 	if ((pow(b,2)-4*a*c)<0){cout << "NEGATIVE DETERMINANT" << endl; }
 	double reff = (-b+sqrt(pow(b,2)-4*a*c))/(2*a);
-	if (reff<0) return 0;//happens very rarely, with bounding spheres most probably
-	//if the facet involves one ore more bounding sphere, we return R with a minus sign
-	if (cell->vertex(facetVertices[j][2])->info().isFictious || cell->vertex(facetVertices[j][1])->info().isFictious || cell->vertex(facetVertices[j][2])->info().isFictious) return -reff;
-	else return reff;
+	return reff;
 }
 
 template <class Tesselation> 
