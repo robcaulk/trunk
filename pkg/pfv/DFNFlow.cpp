@@ -14,7 +14,7 @@
 //it will save compilation time for everyone else
 //when you want it compiled, you can pass -DDFNFLOW to cmake, or just uncomment the following line
 
-// #define DFNFLOW
+#define DFNFLOW
 
 #ifdef DFNFLOW
 #include "FlowEngine_DFNFlowEngineT.hpp"
@@ -90,8 +90,8 @@ public:
 	vtkfile.begin_data("Permeability",CELL_DATA,SCALARS,FLOAT);
 	for (FiniteCellsIterator cell = Tri.finite_cells_begin(); cell != Tri.finite_cells_end(); ++cell) {
 		bool isDrawable = cell->info().isReal() && cell->vertex(0)->info().isReal() && cell->vertex(1)->info().isReal() && cell->vertex(2)->info().isReal()  && cell->vertex(3)->info().isReal();
-		if (isDrawable){vtkfile.write_data(cell->info().s);}
-	}
+	 if (isDrawable){vtkfile.write_data((cell->info().kNorm()[0] + cell->info().kNorm()[1] +cell->info().kNorm()[2] +cell->info().kNorm()[3]) / 4 );}
+        }  // rcaulk since .s was not working, trying to record the average permeability of each cell
 	vtkfile.end_data();}
 	else{
 	vtkfile.begin_data("Pressure",CELL_DATA,SCALARS,FLOAT);
