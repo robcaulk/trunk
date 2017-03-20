@@ -83,6 +83,10 @@ ELSE (DEBUG)
   ADD_DEFINITIONS("-DNDEBUG")
 ENDIF (DEBUG)
 
+IF(CMAKE_COMPILER_IS_GNUCC)
+  SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Og")
+  SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -Og")
+ENDIF(CMAKE_COMPILER_IS_GNUCC)
 #===========================================================
 # Add possibility to use local boost installation (e.g. -DLocalBoost=1.46.1)
 
