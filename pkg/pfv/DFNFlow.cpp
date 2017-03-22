@@ -208,22 +208,34 @@ void DFNFlowEngine::setPositionsBuffer(bool current)
 //}
 
 void DFNFlowEngine::interpolateCrack(Tesselation& Tes, Tesselation& NewTes){
-		int numCracks = 0;
         RTriangulation& Tri = Tes.Triangulation();
 		RTriangulation& newTri = NewTes.Triangulation();
 		FiniteCellsIterator cellEnd = newTri.finite_cells_end();
-        for (FiniteCellsIterator newCell=newTri.finite_cells_begin(); newCell!=cellEnd; newCell++){
-			Point& newCellLocation = newCell->info();
-            CellHandle oldCell = Tri.locate(Point(newCellLocation[0],newCellLocation[1],newCellLocation[2]));
-//			cout << "New cell location" << newCellLocation[0] << " " << newCellLocation[1] << " " << newCellLocation[2] << endl;
-//			Point& oldCellLocation = oldCell->info();
-			if (oldCell->info().crack) numCracks+=1;
-//			cout << "Old cell location" << oldCellLocation[0] << " " << oldCellLocation[1] << " " << oldCellLocation[2] << endl;
-            newCell->info().crack = oldCell->info().crack;
+		#ifdef YADE_OPENMP
+    	const long size = NewTes.cellHandles.size();
+		#pragma omp parallel for num_threads(ompThreads>0 ? ompThreads : 1)
+    	for (long i=0; i<size; i++){
+			CellHandle& newCell = NewTes.cellHandles[i];
+        #else
+            FOREACH(CellHandle& newCell, NewTes.cellHandles){
+        #endif
+            Point& newCellLocation = newCell->info();
+			CellHandle oldCell = Tri.locate(Point(newCellLocation[0],newCellLocation[1],newCellLocation[2]));
+			newCell->info().crack = oldCell->info().crack;
 
-//			cout << "new cell crack stat " << newCell->info().crack << "old cell crack stat " << oldCell->info().crack << endl;
-        }
-//	cout << "num cracks " << numCracks << endl;
+		}
+//        for (FiniteCellsIterator newCell=newTri.finite_cells_begin(); newCell!=cellEnd; newCell++){
+//			Point& newCellLocation = newCell->info();
+//            CellHandle oldCell = Tri.locate(Point(newCellLocation[0],newCellLocation[1],newCellLocation[2]));
+////			cout << "New cell location" << newCellLocation[0] << " " << newCellLocation[1] << " " << newCellLocation[2] << endl;
+////			Point& oldCellLocation = oldCell->info();
+//			if (oldCell->info().crack) numCracks+=1;
+////			cout << "Old cell location" << oldCellLocation[0] << " " << oldCellLocation[1] << " " << oldCellLocation[2] << endl;
+//            newCell->info().crack = oldCell->info().crack;
+//
+////			cout << "new cell crack stat " << newCell->info().crack << "old cell crack stat " << oldCell->info().crack << endl;
+//        }
+////	cout << "num cracks " << numCracks << endl;
     }
 void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, Real aperture, Real residualAperture, RTriangulation::Finite_edges_iterator& ed_it)
 {
