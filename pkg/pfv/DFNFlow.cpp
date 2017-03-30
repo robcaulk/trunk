@@ -132,6 +132,7 @@ public:
 	}
 	vtkfile.end_data();}
 
+////	can we parallelize these?
 //	if(1){
 //	vtkfile.begin_data("fractureTip",CELL_DATA,SCALARS,FLOAT);
 //	#ifdef YADE_OPENMP
@@ -162,13 +163,14 @@ class DFNFlowEngine : public DFNFlowEngineT
 	void trickPermeability (RTriangulation::Facet_circulator& facet,Real aperture, Real residualAperture, RTriangulation::Finite_edges_iterator& edge);
 	void trickPermeability (RTriangulation::Finite_edges_iterator& edge,Real aperture, Real residualAperture);
 	void setPositionsBuffer(bool current);
+	void checkOldTesselation(Tesselation& oldTes, Tesselation& newTes, const CellHandle& newCell1, const CellHandle& newCell2);
 	Real stepCrackHalfWidth; // step crack halfwidth
 	Real fractureHalfWidth = 0; // full fracture halfwidth
-    Real averageAperture;
-    Real maxAperture;
+    	Real averageAperture;
+    	Real maxAperture;
 	Real getCrackHalfWidth() {return fractureHalfWidth;}
-    Real getAverageAperture() {return averageAperture;}
-    Real getMaxAperture() {return maxAperture;}
+    	Real getAverageAperture() {return averageAperture;}
+    	Real getMaxAperture() {return maxAperture;}
 	Point injectionCellCenter;
 // 	void computeTotalFractureArea(Real totalFracureArea,bool printFractureTotalArea);/// Trying to get fracture's surface
 //	Real totalFracureArea; /// Trying to get fracture's surface
@@ -218,21 +220,62 @@ void DFNFlowEngine::interpolateCrack(Tesselation& Tes, Tesselation& NewTes){
         RTriangulation& Tri = Tes.Triangulation();
 		RTriangulation& newTri = NewTes.Triangulation();
 		FiniteCellsIterator cellEnd = newTri.finite_cells_end();
-		#ifdef YADE_OPENMP
+	#ifdef YADE_OPENMP
     	const long size = NewTes.cellHandles.size();
-		#pragma omp parallel for num_threads(ompThreads>0 ? ompThreads : 1)
+	#pragma omp parallel for num_threads(ompThreads>0 ? ompThreads : 1)
     	for (long i=0; i<size; i++){
-			CellHandle& newCell = NewTes.cellHandles[i];
+		CellHandle& newCell = NewTes.cellHandles[i];
         #else
-            FOREACH(CellHandle& newCell, NewTes.cellHandles){
+	FOREACH(CellHandle& newCell, NewTes.cellHandles){
         #endif
-            Point& newCellLocation = newCell->info();
-			CellHandle oldCell = Tri.locate(Point(newCellLocation[0],newCellLocation[1],newCellLocation[2]));
-			newCell->info().crack = oldCell->info().crack;
-			newCell->info().fractureTip = oldCell->info().fractureTip;
-			newCell->info().cellHalfWidth = oldCell->info().cellHalfWidth;
-		}
+		CVector center (0,0,0);
+		if (newCell->info().fictious()==0) for ( int k=0;k<4;k++ ) center= center + 0.25* (Tes.vertex(newCell->vertex(k)->info().id())->point()-CGAL::ORIGIN);		
+		
+		CellHandle oldCell = Tri.locate(Point(center[0],center[1],center[2]));
+
+//		Point& newCellLocation = newCell->info();
+//		CellHandle oldCell = Tri.locate(Point(newCellLocation[0],newCellLocation[1],newCellLocation[2]));
+		newCell->info().crack = oldCell->info().crack;
+		newCell->info().fractureTip = oldCell->info().fractureTip;
+		newCell->info().cellHalfWidth = oldCell->info().cellHalfWidth;
+//		newCell->info().id = oldCell->info().id;
+	}
     }
+
+void DFNFlowEngine::checkOldTesselation(Tesselation& oldTes, Tesselation& newTes, const CellHandle& newCell1, const CellHandle& newCell2){
+	RTriangulation& Tri = oldTes.Triangulation();	
+	CVector center1 (0,0,0);
+	CVector center2 (0,0,0);
+
+	if (newCell1->info().fictious()==0) for ( int k=0;k<4;k++ ) center1= center1 + 0.25* (oldTes.vertex(newCell1->vertex(k)->info().id())->point()-CGAL::ORIGIN);	
+	CellHandle oldCell1 = Tri.locate(Point(center1[0],center1[1],center1[2]));
+
+	if (newCell2->info().fictious()==0) for ( int k=0;k<4;k++ ) center2= center2 + 0.25* (oldTes.vertex(newCell2->vertex(k)->info().id())->point()-CGAL::ORIGIN);	
+	CellHandle oldCell2 = Tri.locate(Point(center2[0],center2[1],center2[2]));
+
+       	for (int i = 0; i<=3; i++) { 
+		CellHandle oldNeighborCell = oldCell1->neighbor(i); 
+		if (oldNeighborCell->info().fractureTip==1) {
+		CVector neighborCenter (0,0,0);
+		for ( int k=0;k<4;k++ ) neighborCenter= neighborCenter + 0.25* (newTes.vertex(oldNeighborCell->vertex(k)->info().id())->point()-CGAL::ORIGIN);
+		CellHandle newNeighborCell = newTes.Triangulation().locate(Point(neighborCenter[0], neighborCenter[1], neighborCenter[2]));
+	newNeighborCell->info().fractureTip=0;
+		}
+	}
+
+for (int i = 0; i<=3; i++) { 
+		CellHandle oldNeighborCell = oldCell2->neighbor(i); 
+		if (oldNeighborCell->info().fractureTip==1) {
+		CVector neighborCenter (0,0,0);
+		for ( int k=0;k<4;k++ ) neighborCenter= neighborCenter + 0.25* (newTes.vertex(oldNeighborCell->vertex(k)->info().id())->point()-CGAL::ORIGIN);
+		CellHandle newNeighborCell = newTes.Triangulation().locate(Point(neighborCenter[0], neighborCenter[1], neighborCenter[2]));
+	newNeighborCell->info().fractureTip=0;
+
+//	newCell->neighbor(i)->info().fractureTip = 0;
+		}
+	}
+}
+
 
 void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, Real aperture, Real residualAperture, RTriangulation::Finite_edges_iterator& ed_it)
 {
@@ -243,23 +286,38 @@ void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, R
 	const CellHandle& cell2 = currentFacet.first->neighbor(facet->second);
 	if ( Tri.is_infinite(cell1) || Tri.is_infinite(cell2)) cerr<<"Infinite cell found in trickPermeability, should be handled somehow, maybe"<<endl;
 	cell1->info().kNorm()[currentFacet.second]=cell2->info().kNorm()[Tri.mirror_index(cell1, currentFacet.second)] = pow((aperture+residualAperture),3)/(12*viscosity);
-
+	if (first) {
+		cell1->info().crack= 1;
+		cell2->info().crack= 1;
+	}
 	//For vtk recorder:
     // if the fractured cell is newly fractured, must be at tip and therefore gives info about the fracture dimensions and stresses
-	if (!cell1->info().crack && !cell1->info().isFictious && calcCrackHalfWidth && !solver->imposedF.empty()) {
-        Point& cellCenter = cell1->info();
+	if (!first && !cell1->info().crack && !cell1->info().isFictious && calcCrackHalfWidth && !solver->imposedF.empty()) {        
+	
+	Point& cellCenter = cell1->info();
         CVector halfWidthVector = cellCenter - injectionCellCenter;
         Real halfWidth = sqrt(halfWidthVector.squared_length());
         cell1->info().cellHalfWidth = halfWidth;
-        if (halfWidth > stepCrackHalfWidth) {
-            stepCrackHalfWidth = halfWidth;
-            cell1->info().fractureTip = 1;
-            } 
+		if (halfWidth > fractureHalfWidth){
+			stepCrackHalfWidth = halfWidth;
+//			cell1->info().fractureTip = 1;
+		}
+	checkOldTesselation(solver->T[!solver->currentTes], solver->T[solver->currentTes], cell1, cell2);	
+//	for (int i = 0; i<=3; i++) { 
+//			if (oldCell1->neighbor(i)->info().fractureTip==1) {
+//				cell1->neighbor(i)->info().fractureTip = 0;
+//				cell1->info().fractureTip = 1;
+//				cell2->info().fractureTip = 1;
+//			}
+//		}
+	cell1->info().fractureTip = cell2->info().fractureTip =1;	
+	cell1->info().crack = cell2->info().crack= 1;
+	
         }
-	if (cell1->info().fractureTip && cell1->info().cellHalfWidth < fractureHalfWidth) cell1->info().fractureTip = 0;  // the cell was the fracture tip but is no longer
-	if (cell2->info().fractureTip && cell2->info().cellHalfWidth < fractureHalfWidth) cell2->info().fractureTip = 0;
-    	cell1->info().crack= 1;
-	cell2->info().crack= 1;
+//	if (cell1->info().fractureTip && cell1->info().cellHalfWidth < fractureHalfWidth) cell1->info().fractureTip = 0;  // the cell was the fracture tip but is no longer
+//	if (cell2->info().fractureTip && cell2->info().cellHalfWidth < fractureHalfWidth) cell2->info().fractureTip = 0;
+//    	cell1->info().crack= 1;
+//	cell2->info().crack= 1;
 	cell2->info().blocked = cell1->info().blocked = cell2->info().Pcondition = cell1->info().Pcondition = false;//those ones will be included in the flow problem
 	Point& CellCentre1 = cell1->info(); /// Trying to get fracture's surface 
 	Point& CellCentre2 = cell2->info(); /// Trying to get fracture's surface 
@@ -319,6 +377,7 @@ void DFNFlowEngine::trickPermeability()
 			jcfpmphys = YADE_CAST<JCFpmPhys*>(interaction->phys.get());
 			
 			if ( jcfpmphys->isOnJoint || jcfpmphys->isBroken ) {
+				
 				
 				numberOfCrackedOrJoinedInteractions +=1;
 				
