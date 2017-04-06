@@ -43,6 +43,8 @@ class JCFpmMat: public FrictMat {
 		((Real,jointTensileStrength,0.,,"Defines the :yref:`maximum admissible normal force in traction<JCFpmPhys.FnMax>` on the joint surface. [Pa]"))
 		((int,type,0,,"If particles of two different types interact, it will be with friction only (no cohesion).[-]"))
 		((Real,tensileStrength,0.,,"Defines the maximum admissible normal force in traction in the matrix (:yref:`FnMax<JCFpmPhys.FnMax>` = tensileStrength * :yref:`crossSection<JCFpmPhys.crossSection>`). [Pa]"))
+		((Real,tensileStrengthDeviation,0.,,"standard deviation for the distribution of tensile strengths (tensileStrength is mean), activates statistical distribution if >0"))
+		((Real,cohStrengthDeviation,0.,,"standard deviation for the distribution of cohesive strengths (cohesion is mean), activates statistical distribution if >0"))
 		,
 		createIndex();
 	);
@@ -61,7 +63,7 @@ class JCFpmPhys: public NormShearPhys {
 			((bool,more,false,,"specifies if the interaction is crossed by more than 3 joints. If true, interaction is deleted (temporary solution)."))
 			((bool,isOnJoint,false,,"defined as true when both interacting particles are :yref:`on joint<JCFpmState.onJoint>` and are in opposite sides of the joint surface. In this case, mechanical parameters of the interaction are derived from the ''joint...'' material properties of the particles. Furthermore, the normal of the interaction may be re-oriented (see :yref:`Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.smoothJoint`)."))
 			((Real,tanFrictionAngle,0,,"tangent of Coulomb friction angle for this interaction (auto. computed). [-]"))
-			((Real,crossSection,0,,"crossSection=pi*Rmin^2. [m2]"))
+			((Real,crossSection,0,,"crossSection=pi*Ravg^2. [m2]")) // changed to average rcaulk
 			((Real,FnMax,0,,"positiv value computed from :yref:`tensile strength<JCFpmMat.tensileStrength>` (or joint variant) to define the maximum admissible normal force in traction: Fn >= -FnMax. [N]"))
 			((Real,FsMax,0,,"computed from :yref:`cohesion<JCFpmMat.cohesion>` (or jointCohesion) to define the maximum admissible tangential force in shear, for Fn=0. [N]"))
 			((Vector3r,jointNormal,Vector3r::Zero(),,"normal direction to the joint, deduced from e.g. :yref:`<JCFpmState.jointNormal1>`."))
@@ -89,6 +91,8 @@ class Ip2_JCFpmMat_JCFpmMat_JCFpmPhys: public IPhysFunctor{
 		
                 YADE_CLASS_BASE_DOC_ATTRS(Ip2_JCFpmMat_JCFpmMat_JCFpmPhys,IPhysFunctor,"Converts 2 :yref:`JCFpmMat` instances to one :yref:`JCFpmPhys` instance, with corresponding parameters. See :yref:`JCFpmMat` and [Duriez2016]_ for details",
 			((int,cohesiveTresholdIteration,1,,"should new contacts be cohesive? If strictly negativ, they will in any case. If positiv, they will before this iter, they won't afterward."))
+			((bool,useAvgRadius,0,,"Use the average radius for crossSection computation instead of minimum (false by default)."))
+			((Real,totalAvgRadius,0,,"Use constant value for the crossSection calculation. Value > 0 activates it. (should use mean radius from sphere pack here, but could use other values)."))
 		);
 		
 };

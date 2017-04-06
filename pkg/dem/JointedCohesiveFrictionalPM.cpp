@@ -236,8 +236,16 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 	/* From interaction geometry */
 	Real R1= geom->radius1;
 	Real R2= geom->radius2;
-	contactPhysics->crossSection = Mathr::PI*pow(min(R1,R2),2);
-
+	
+	// control the radius used for cross-sectional area computation
+	if (useAvgRadius){	
+	contactPhysics->crossSection = Mathr::PI*pow((R1+R2)/2,2);  // use the average radius instead of the minimum
+	} else if (totalAvgRadius > 0) {
+	contactPhysics->crossSection = Mathr::PI*pow(totalAvgRadius, 2);  // use total average radius
+	}
+	else {
+	contactPhysics->crossSection = Mathr::PI*pow(min(R1,R2),2); 
+	}
 	/* Pass values to JCFpmPhys. In case of a "jointed" interaction, the following values will be replaced by other ones later (in few if(){} blocks)*/
 	
 	// frictional properties
@@ -257,8 +265,21 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 	}
 	
 	if ( contactPhysics->isCohesive ) {
-	  contactPhysics->FnMax = std::min(SigT1,SigT2)*contactPhysics->crossSection;
-	  contactPhysics->FsMax = std::min(Coh1,Coh2)*contactPhysics->crossSection;
+		if (yade1->tensileStrengthDeviation>0 && yade1->cohStrengthDeviation>0) {
+			std::random_device rd;
+			std::mt19937 e2(rd());
+			std::normal_distribution<Real> tensileDistribution(min(SigT1,SigT2), yade1->tensileStrengthDeviation);
+			std::normal_distribution<Real> cohDistribution(min(Coh1,Coh2), yade1->cohStrengthDeviation);
+			Real SigT = tensileDistribution(e2); 
+			Real Coh = cohDistribution(e2);
+			contactPhysics->FnMax = SigT*contactPhysics->crossSection;
+			cout << "SigT" << SigT << "FnMax" << contactPhysics->FnMax << endl;
+	  		contactPhysics->FsMax = Coh*contactPhysics->crossSection;
+		}
+		else {
+	  	contactPhysics->FnMax = std::min(SigT1,SigT2)*contactPhysics->crossSection;
+	  	contactPhysics->FsMax = std::min(Coh1,Coh2)*contactPhysics->crossSection;
+		}	
 	}
 
 	/// +++ Jointed interactions ->NOTE: geom->normal is oriented from 1 to 2 / jointNormal from plane to sphere 
