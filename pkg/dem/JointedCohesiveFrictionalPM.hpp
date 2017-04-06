@@ -92,7 +92,7 @@ class Ip2_JCFpmMat_JCFpmMat_JCFpmPhys: public IPhysFunctor{
                 YADE_CLASS_BASE_DOC_ATTRS(Ip2_JCFpmMat_JCFpmMat_JCFpmPhys,IPhysFunctor,"Converts 2 :yref:`JCFpmMat` instances to one :yref:`JCFpmPhys` instance, with corresponding parameters. See :yref:`JCFpmMat` and [Duriez2016]_ for details",
 			((int,cohesiveTresholdIteration,1,,"should new contacts be cohesive? If strictly negativ, they will in any case. If positiv, they will before this iter, they won't afterward."))
 			((bool,useAvgRadius,0,,"Use the average radius for crossSection computation instead of minimum (false by default)."))
-			((Real,totalAvgRadius,0,,"Use constant value for the crossSection calculation. Value > 0 activates it. (should use mean radius from sphere pack here, but could use other values)."))
+			((Real,totalAvgRadius,0,,"Use constant value for the crossSection calculation. Should be coupled with :yref:`tensile strength distribution<JCFpmMat.tensileStrengthDeviation>`and :yref:`cohesive strength distribution<JCFpmMat.cohStrengthDeviation>`  Value > 0 activates it. (should use mean radius from sphere pack here, but could use other values)."))
 		);
 		
 };
