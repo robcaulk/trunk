@@ -273,7 +273,6 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 			Real SigT = tensileDistribution(e2); 
 			Real Coh = cohDistribution(e2);
 			contactPhysics->FnMax = SigT*contactPhysics->crossSection;
-			cout << "SigT" << SigT << "FnMax" << contactPhysics->FnMax << endl;
 	  		contactPhysics->FsMax = Coh*contactPhysics->crossSection;
 		}
 		else {
