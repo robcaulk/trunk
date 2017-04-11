@@ -67,13 +67,14 @@ class TemplateFlowEngine_@TEMPLATE_FLOW_NAME@ : public PartialEngine
 		vector<posData> positionBufferParallel;//keep the positions from a given step for multithread factorization
 		//copy positions in a buffer for faster and/or parallel access
 		virtual void setPositionsBuffer(bool current);
-		virtual void trickPermeability() {};
+		virtual void trickPermeability(Solver* flow) {};
 
 	public :
 		int retriangulationLastIter;
 		enum {wall_xmin, wall_xmax, wall_ymin, wall_ymax, wall_zmin, wall_zmax};
 		Vector3r normal [6];
 		bool currentTes;
+		bool fluxChanged;  // flag that keeps multithreading working when a flux is imposed
 		bool metisForced;
 		double epsVolCumulative;
 		int ReTrg;
@@ -90,6 +91,7 @@ class TemplateFlowEngine_@TEMPLATE_FLOW_NAME@ : public PartialEngine
 		void updateVolumes (Solver& flow);
 		void initializeVolumes (Solver& flow);
 		void boundaryConditions(Solver& flow);
+		void copyImposedPandF();
 		void updateBCs () {
 			if (solver->tesselation().maxId>0) boundaryConditions(*solver);//avoids crash at iteration 0, when the packing is not bounded yet
 			else LOG_ERROR("updateBCs not applied");
