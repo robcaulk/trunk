@@ -158,15 +158,16 @@ YADE_PLUGIN((DFNFlowEngineT));
 class DFNFlowEngine : public DFNFlowEngineT
 {
 	public :
-	void trickPermeability();
+	void trickPermeability(Solver* flow);
     void interpolateCrack(Tesselation& Tes, Tesselation& NewTes);
-	void trickPermeability (RTriangulation::Facet_circulator& facet,Real aperture, Real residualAperture, RTriangulation::Finite_edges_iterator& edge);
-	void trickPermeability (RTriangulation::Finite_edges_iterator& edge,Real aperture, Real residualAperture);
+	void trickPermeability (RTriangulation::Facet_circulator& facet,Real fracturePerm, RTriangulation::Finite_edges_iterator& edge, Solver* flow);
+	void trickPermeability (RTriangulation::Finite_edges_iterator& edge,Real fracturePerm, Solver* flow);
 	void setPositionsBuffer(bool current);
 	void checkOldTesselation(Tesselation& oldTes, Tesselation& newTes, const CellHandle& newCell1, const CellHandle& newCell2);
 	Real stepCrackHalfWidth; // step crack halfwidth
 	Real fractureHalfWidth = 0; // full fracture halfwidth
     	Real averageAperture;
+	Real averageFracturePermeability;
     	Real maxAperture;
 	Real getCrackHalfWidth() {return fractureHalfWidth;}
     	Real getAverageAperture() {return averageAperture;}
@@ -179,15 +180,16 @@ class DFNFlowEngine : public DFNFlowEngineT
 
 	YADE_CLASS_BASE_DOC_ATTRS_INIT_CTOR_PY(DFNFlowEngine,DFNFlowEngineT,"This is an enhancement of the FlowEngine for intact and fractured rocks that takes into acount pre-existing discontinuities and bond breakage between particles. The local conductivity around the broken link is calculated according to parallel plates model",
 	((Real, jointResidual, 0,,"calibration parameter for residual aperture of joints"))
+	((Real, inducedResidual, 0,,"calibration parameter for residual aperture of induced cracks"))
 	((bool, updatePositions, false,,"update particles positions when rebuilding the mesh (experimental)"))
  	((bool, printFractureTotalArea, 0,,"The final fracture area computed through the network")) /// Trying to get fracture's surface
 	((bool, calcCrackArea, true,,"The amount of crack per pore () is updated if calcCrackArea=True")) /// Trying to get fracture's surface((bool))
-    ((bool, calcCrackHalfWidth, true,,"Calculate the fracture halfwidth")) /// Trying to get fracture's surface
+    	((bool, calcCrackHalfWidth, true,,"Calculate the fracture halfwidth")) /// Trying to get fracture's surface
 	,,,
 //	.def("getCrackArea",&DFNFlowEngine::crackArea,(boost::python::arg("id")),"get the cracked area within cell 'id'.")
 	.def("getCrackHalfWidth", &DFNFlowEngine::getCrackHalfWidth, "report the current fracture half width")
-    .def("getAverageAperture", &DFNFlowEngine::getAverageAperture, "report the current average aperture")
-    .def("getMaxAperture", &DFNFlowEngine::getMaxAperture, "report the max aperture")
+    	.def("getAverageAperture", &DFNFlowEngine::getAverageAperture, "report the current average aperture")
+    	.def("getMaxAperture", &DFNFlowEngine::getMaxAperture, "report the max aperture")
 // 	.def("computeTotalFractureArea",&DFNFlowEngineT::computeTotalFractureArea," Compute and print the total fracture area of the network") /// Trying to get fracture's surface
 // 	.def("trickPermeability",&DFNFlowEngineT::trickPermeability,"measure the mean trickPermeability in the period")
 	)
@@ -216,6 +218,7 @@ void DFNFlowEngine::setPositionsBuffer(bool current)
 	}
 }
 
+// function allows us to interpolate information about fractured/non fractured cells so we can identify newly fractured cells, monitor half width, and identify fracture tip
 void DFNFlowEngine::interpolateCrack(Tesselation& Tes, Tesselation& NewTes){
         RTriangulation& Tri = Tes.Triangulation();
 		RTriangulation& newTri = NewTes.Triangulation();
@@ -232,9 +235,6 @@ void DFNFlowEngine::interpolateCrack(Tesselation& Tes, Tesselation& NewTes){
 		if (newCell->info().fictious()==0) for ( int k=0;k<4;k++ ) center= center + 0.25* (Tes.vertex(newCell->vertex(k)->info().id())->point()-CGAL::ORIGIN);		
 		
 		CellHandle oldCell = Tri.locate(Point(center[0],center[1],center[2]));
-
-//		Point& newCellLocation = newCell->info();
-//		CellHandle oldCell = Tri.locate(Point(newCellLocation[0],newCellLocation[1],newCellLocation[2]));
 		newCell->info().crack = oldCell->info().crack;
 		newCell->info().fractureTip = oldCell->info().fractureTip;
 		newCell->info().cellHalfWidth = oldCell->info().cellHalfWidth;
@@ -242,6 +242,7 @@ void DFNFlowEngine::interpolateCrack(Tesselation& Tes, Tesselation& NewTes){
 	}
     }
 
+// function used to change fractureTip info to false for cells neighboring new fractureTip = true cells. 
 void DFNFlowEngine::checkOldTesselation(Tesselation& oldTes, Tesselation& newTes, const CellHandle& newCell1, const CellHandle& newCell2){
 	RTriangulation& Tri = oldTes.Triangulation();	
 	CVector center1 (0,0,0);
@@ -271,28 +272,27 @@ for (int i = 0; i<=3; i++) {
 		CellHandle newNeighborCell = newTes.Triangulation().locate(Point(neighborCenter[0], neighborCenter[1], neighborCenter[2]));
 	newNeighborCell->info().fractureTip=0;
 
-//	newCell->neighbor(i)->info().fractureTip = 0;
 		}
 	}
 }
 
 
-void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, Real aperture, Real residualAperture, RTriangulation::Finite_edges_iterator& ed_it)
+void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, Real fracturePerm, RTriangulation::Finite_edges_iterator& ed_it, Solver* flow)
 {
 
 	const RTriangulation::Facet& currentFacet = *facet; // seems verbose but facet->first was declaring a junk cell and crashing program (https://bugs.launchpad.net/yade/+bug/1666339)
-	const RTriangulation& Tri = solver->T[solver->currentTes].Triangulation();
+	const RTriangulation& Tri = flow->T[flow->currentTes].Triangulation();
 	const CellHandle& cell1 = currentFacet.first;
 	const CellHandle& cell2 = currentFacet.first->neighbor(facet->second);
 	if ( Tri.is_infinite(cell1) || Tri.is_infinite(cell2)) cerr<<"Infinite cell found in trickPermeability, should be handled somehow, maybe"<<endl;
-	cell1->info().kNorm()[currentFacet.second]=cell2->info().kNorm()[Tri.mirror_index(cell1, currentFacet.second)] = pow((aperture+residualAperture),3)/(12*viscosity);
+	cell1->info().kNorm()[currentFacet.second]=cell2->info().kNorm()[Tri.mirror_index(cell1, currentFacet.second)] = fracturePerm;
 	if (first) {
 		cell1->info().crack= 1;
 		cell2->info().crack= 1;
 	}
 	//For vtk recorder:
     // if the fractured cell is newly fractured, must be at tip and therefore gives info about the fracture dimensions and stresses
-	if (!first && !cell1->info().crack && !cell1->info().isFictious && calcCrackHalfWidth && !solver->imposedF.empty()) {        
+	if (!first && !cell1->info().crack && !cell1->info().isFictious && calcCrackHalfWidth && !flow->imposedF.empty()) {        
 	
 	Point& cellCenter = cell1->info();
         CVector halfWidthVector = cellCenter - injectionCellCenter;
@@ -302,22 +302,12 @@ void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, R
 			stepCrackHalfWidth = halfWidth;
 //			cell1->info().fractureTip = 1;
 		}
-	checkOldTesselation(solver->T[!solver->currentTes], solver->T[solver->currentTes], cell1, cell2);	
-//	for (int i = 0; i<=3; i++) { 
-//			if (oldCell1->neighbor(i)->info().fractureTip==1) {
-//				cell1->neighbor(i)->info().fractureTip = 0;
-//				cell1->info().fractureTip = 1;
-//				cell2->info().fractureTip = 1;
-//			}
-//		}
+	checkOldTesselation(solver->T[solver->currentTes], flow->T[flow->currentTes], cell1, cell2);
+//	cout<<"DFN ----- checked old tesselation" <<endl;	
 	cell1->info().fractureTip = cell2->info().fractureTip =1;	
 	cell1->info().crack = cell2->info().crack= 1;
 	
         }
-//	if (cell1->info().fractureTip && cell1->info().cellHalfWidth < fractureHalfWidth) cell1->info().fractureTip = 0;  // the cell was the fracture tip but is no longer
-//	if (cell2->info().fractureTip && cell2->info().cellHalfWidth < fractureHalfWidth) cell2->info().fractureTip = 0;
-//    	cell1->info().crack= 1;
-//	cell2->info().crack= 1;
 	cell2->info().blocked = cell1->info().blocked = cell2->info().Pcondition = cell1->info().Pcondition = false;//those ones will be included in the flow problem
 	Point& CellCentre1 = cell1->info(); /// Trying to get fracture's surface 
 	Point& CellCentre2 = cell2->info(); /// Trying to get fracture's surface 
@@ -337,31 +327,37 @@ void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, R
 		}
 }
 
-void DFNFlowEngine::trickPermeability(RTriangulation::Finite_edges_iterator& edge, Real aperture, Real residualAperture)
+void DFNFlowEngine::trickPermeability(RTriangulation::Finite_edges_iterator& edge, Real fracturePerm,Solver* flow)
 {
-	const RTriangulation& Tri = solver->T[solver->currentTes].Triangulation();
-	
+	const RTriangulation& Tri = flow->T[flow->currentTes].Triangulation();
+//	cout << "DFN ---- defined the Triangulation to be used in facet circulator" << endl;
 	
 	RTriangulation::Facet_circulator facet1 = Tri.incident_facets(*edge);
 	RTriangulation::Facet_circulator facet0=facet1++;
-	trickPermeability(facet0, aperture,residualAperture, edge);
-	while ( facet1!=facet0 ) {trickPermeability(facet1, aperture, residualAperture, edge); facet1++;}
+	trickPermeability(facet0, fracturePerm, edge, flow);
+	while ( facet1!=facet0 ) {trickPermeability(facet1, fracturePerm, edge, flow); facet1++;}
 	/// Needs the fracture surface for this edge?
 // 	double edgeArea = solver->T[solver->currentTes].computeVFacetArea(edge); cout<<"edge area="<<edgeArea<<endl;
 }
 
-void DFNFlowEngine::trickPermeability()
+void DFNFlowEngine::trickPermeability(Solver* flow)
 {
-	const RTriangulation& Tri = solver->T[solver->currentTes].Triangulation();
-    if (!first) interpolateCrack(solver->T[!solver->currentTes], solver->T[solver->currentTes]);
+	const RTriangulation& Tri = flow->T[flow->currentTes].Triangulation();
+	cout << "DFN --- Assigned tri" <<endl;
+    if (!first) interpolateCrack(solver->T[solver->currentTes], flow->T[flow->currentTes]);
+	cout << "DFN ---- interpolated crack" << endl;
     const JCFpmPhys* jcfpmphys;
 	const shared_ptr<InteractionContainer> interactions = scene->interactions;
 	int numberOfCrackedOrJoinedInteractions = 0;
+	int numberOfTrickedCells = 0;
+	Real sumOfPermeability = 0;
 	Real SumOfApertures = 0.;
 	averageAperture = 0;
     maxAperture = 0;
+	
 //	Real totalFracureArea=0; /// Trying to get fracture's surface
-	if (!solver->imposedF.empty()) injectionCellCenter = solver->IFCells[0]->info();
+	if (!flow->imposedF.empty()) injectionCellCenter = flow->IFCells[0]->info();
+	cout << "DFN ---- defined injection Cell center" << endl;
 	stepCrackHalfWidth = 0; // The fracture half width
 // 	const shared_ptr<IGeom>& ig;
 // 	const ScGeom* geom; // = static_cast<ScGeom*>(ig.get());
@@ -383,23 +379,28 @@ void DFNFlowEngine::trickPermeability()
 				
 				// here are some workarounds
 // 				Real residualAperture = jcfpmphys->isOnJoint? jointResidual : 0.1*jointResidual;
-				Real residualAperture = jcfpmphys->isOnJoint? jointResidual : 0.; // do we define a residual aperture for induced cracks?
+				Real residualAperture = jcfpmphys->isOnJoint? jointResidual : inducedResidual; // do we define a residual aperture for induced cracks?
 // 				Real residualAperture = jointResidual;
 // 				cout<<"residual aperture = " << residualAperture <<endl;
 				
 				if (!jcfpmphys->isOnJoint && jcfpmphys->crackJointAperture<=0) continue; // avoid trick permeability for closed induced crack (permeability=matrix permeability)
 				
 				Real aperture = jcfpmphys->crackJointAperture;
+				Real fracturePerm = pow((aperture+residualAperture),3)/(12*viscosity);
+				numberOfTrickedCells += 1;
+				sumOfPermeability += fracturePerm;
 // 				cout<<"aperture = " << aperture <<endl;
-                if (aperture > maxAperture) maxAperture=aperture;
+                	if (aperture > maxAperture) maxAperture=aperture;
 				SumOfApertures += aperture;
-				trickPermeability(edge, aperture, residualAperture);
+				trickPermeability(edge, fracturePerm, flow);
 // 				trickPermeability(edge, jcfpmphys->crackJointAperture, residualAperture); // we should be able to use this line
 				
 			};	
 		}
 	}
 	averageAperture = SumOfApertures/numberOfCrackedOrJoinedInteractions; /// DEBUG
+	averageFracturePermeability = sumOfPermeability/numberOfTrickedCells;
+	if (debug) cout << "DFN --- Average Fracture Permeability =" << averageFracturePermeability << endl;
 
 	if (stepCrackHalfWidth > fractureHalfWidth) fractureHalfWidth = stepCrackHalfWidth;
 //	cout << "fracture half width = " << fractureHalfWidth << endl;
