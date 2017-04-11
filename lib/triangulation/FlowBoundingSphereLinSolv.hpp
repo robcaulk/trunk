@@ -61,6 +61,7 @@ public:
 	bool isFullLinearSystemGSSet;
 	bool areCellsOrdered;//true when orderedCells is filled, turn it false after retriangulation
 	bool updatedRHS;
+	bool factorizeOnly; 
 	
 	#ifdef EIGENSPARSE_LIB
 	//Eigen's sparse matrix and solver
