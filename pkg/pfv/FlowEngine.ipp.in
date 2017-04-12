@@ -108,7 +108,7 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 //			copyImposedPandF(); // copy imposed values and find corresponding cells in new solver
 			if (!fluxChanged) { 
 				if (fluidBulkModulus>0 || doInterpolate) solver->interpolate (solver->T[solver->currentTes], backgroundSolver->T[backgroundSolver->currentTes]);
-			cout << "finished interpolation" << endl;
+//			cout << "finished interpolation" << endl;
 			backgroundSolver->imposedP = vector<pair<CGT::Point,Real> >(solver->imposedP);
 			backgroundSolver->imposedF = vector<pair<CGT::Point,Real> >(solver->imposedF);				
 			solver=backgroundSolver; 
@@ -522,7 +522,7 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 			#pragma omp atomic
                 	totDVol+=dVol;}
         }
-	cout << "finished updating volumes" << endl;
+//	cout << "finished updating volumes" << endl;
 	if (defTolerance>0)  epsVolMax = totDVol/totVol;
 
 	//FIXME: move this loop to FlowBoundingSphere
@@ -530,10 +530,10 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 		flow.IFCells[n]->info().dv()+=flow.imposedF[n].second;
 		flow.IFCells[n]->info().Pcondition=false;}
 	if (debug) cout << "Imposed F cells " << flow.imposedF.size() << endl;
-		if (!flow.imposedF.empty()) {
-		cout << "Imposed flow " << flow.imposedF[0].second << endl;
-		cout << "IF cell dv " << flow.IFCells[0]->info().dv() << endl;
-	}
+	//	if (!flow.imposedF.empty()) {
+	//	cout << "Imposed flow " << flow.imposedF[0].second << endl;
+	//	cout << "IF cell dv " << flow.IFCells[0]->info().dv() << endl;
+//	}
         if ( debug ) cout << "Updated volumes, total =" <<totVol<<", dVol="<<totDVol<<endl;
 }
 template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >

@@ -343,9 +343,9 @@ void DFNFlowEngine::trickPermeability(RTriangulation::Finite_edges_iterator& edg
 void DFNFlowEngine::trickPermeability(Solver* flow)
 {
 	const RTriangulation& Tri = flow->T[flow->currentTes].Triangulation();
-	cout << "DFN --- Assigned tri" <<endl;
+//	cout << "DFN --- Assigned tri" <<endl;
     if (!first) interpolateCrack(solver->T[solver->currentTes], flow->T[flow->currentTes]);
-	cout << "DFN ---- interpolated crack" << endl;
+//	cout << "DFN ---- interpolated crack" << endl;
     const JCFpmPhys* jcfpmphys;
 	const shared_ptr<InteractionContainer> interactions = scene->interactions;
 	int numberOfCrackedOrJoinedInteractions = 0;
@@ -357,7 +357,7 @@ void DFNFlowEngine::trickPermeability(Solver* flow)
 	
 //	Real totalFracureArea=0; /// Trying to get fracture's surface
 	if (!flow->imposedF.empty()) injectionCellCenter = flow->IFCells[0]->info();
-	cout << "DFN ---- defined injection Cell center" << endl;
+//	cout << "DFN ---- defined injection Cell center" << endl;
 	stepCrackHalfWidth = 0; // The fracture half width
 // 	const shared_ptr<IGeom>& ig;
 // 	const ScGeom* geom; // = static_cast<ScGeom*>(ig.get());
