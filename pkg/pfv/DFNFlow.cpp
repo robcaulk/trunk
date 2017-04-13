@@ -27,6 +27,7 @@ class DFNCellInfo : public FlowCellInfo_DFNFlowEngineT
 	Real crackArea;// the volume of cracks
     	bool fractureTip; //  The cell is the fracture tip
 	Real cellHalfWidth; // distance from cell to injection point
+	int breakType = 2;
 
 // 	bool preExistingJoint;
 // 	void anotherFunction() {};
@@ -132,6 +133,14 @@ public:
 	}
 	vtkfile.end_data();}
 
+	if(1){
+	vtkfile.begin_data("breakType",CELL_DATA,SCALARS,FLOAT);
+	for (FiniteCellsIterator cell = Tri.finite_cells_begin(); cell != Tri.finite_cells_end(); ++cell) {
+		bool isDrawable = cell->info().isReal() && cell->vertex(0)->info().isReal() && cell->vertex(1)->info().isReal() && cell->vertex(2)->info().isReal()  && cell->vertex(3)->info().isReal();
+		if (isDrawable){vtkfile.write_data(cell->info().breakType);}
+	}
+	vtkfile.end_data();}
+
 ////	can we parallelize these?
 //	if(1){
 //	vtkfile.begin_data("fractureTip",CELL_DATA,SCALARS,FLOAT);
@@ -169,9 +178,14 @@ class DFNFlowEngine : public DFNFlowEngineT
     	Real averageAperture;
 	Real averageFracturePermeability;
     	Real maxAperture;
+	Real crackArea;
+	Real branchIntensity;
+	int breakType;
 	Real getCrackHalfWidth() {return fractureHalfWidth;}
     	Real getAverageAperture() {return averageAperture;}
     	Real getMaxAperture() {return maxAperture;}
+	Real getCrackArea() {return crackArea;}
+	Real getBranchIntensity() {return branchIntensity;}
 	Point injectionCellCenter;
 // 	void computeTotalFractureArea(Real totalFracureArea,bool printFractureTotalArea);/// Trying to get fracture's surface
 //	Real totalFracureArea; /// Trying to get fracture's surface
@@ -190,6 +204,8 @@ class DFNFlowEngine : public DFNFlowEngineT
 	.def("getCrackHalfWidth", &DFNFlowEngine::getCrackHalfWidth, "report the current fracture half width")
     	.def("getAverageAperture", &DFNFlowEngine::getAverageAperture, "report the current average aperture")
     	.def("getMaxAperture", &DFNFlowEngine::getMaxAperture, "report the max aperture")
+	.def("getCrackArea", &DFNFlowEngine::getCrackArea, "report the crack area")
+	.def("getBranchIntensity", &DFNFlowEngine::getBranchIntensity, "report branch intensity (fracture area/half length)")
 // 	.def("computeTotalFractureArea",&DFNFlowEngineT::computeTotalFractureArea," Compute and print the total fracture area of the network") /// Trying to get fracture's surface
 // 	.def("trickPermeability",&DFNFlowEngineT::trickPermeability,"measure the mean trickPermeability in the period")
 	)
@@ -290,6 +306,7 @@ void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, R
 		cell1->info().crack= 1;
 		cell2->info().crack= 1;
 	}
+	cell1->info().breakType=cell2->info().breakType=breakType;
 	//For vtk recorder:
     // if the fractured cell is newly fractured, must be at tip and therefore gives info about the fracture dimensions and stresses
 	if (!first && !cell1->info().crack && !cell1->info().isFictious && calcCrackHalfWidth && !flow->imposedF.empty()) {        
@@ -324,6 +341,7 @@ void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, R
 			Real halfCrackArea = 0.25*sqrt(std::abs(cross_product(CellCentre1-p3,CellCentre2-p3).squared_length()));//
 			cell1->info().crackArea += halfCrackArea;
 			cell2->info().crackArea += halfCrackArea;
+			crackArea += 2*halfCrackArea;
 		}
 }
 
@@ -353,7 +371,9 @@ void DFNFlowEngine::trickPermeability(Solver* flow)
 	Real sumOfPermeability = 0;
 	Real SumOfApertures = 0.;
 	averageAperture = 0;
-    maxAperture = 0;
+	crackArea = 0;
+	branchIntensity = 0;
+	maxAperture = 0;
 	
 //	Real totalFracureArea=0; /// Trying to get fracture's surface
 	if (!flow->imposedF.empty()) injectionCellCenter = flow->IFCells[0]->info();
@@ -374,7 +394,7 @@ void DFNFlowEngine::trickPermeability(Solver* flow)
 			
 			if ( jcfpmphys->isOnJoint || jcfpmphys->isBroken ) {
 				
-				
+				breakType = jcfpmphys->breakType;
 				numberOfCrackedOrJoinedInteractions +=1;
 				
 				// here are some workarounds
@@ -403,6 +423,7 @@ void DFNFlowEngine::trickPermeability(Solver* flow)
 	if (debug) cout << "DFN --- Average Fracture Permeability =" << averageFracturePermeability << endl;
 
 	if (stepCrackHalfWidth > fractureHalfWidth) fractureHalfWidth = stepCrackHalfWidth;
+	branchIntensity = crackArea/fractureHalfWidth;
 //	cout << "fracture half width = " << fractureHalfWidth << endl;
 // 	cout << " Average aperture in joint ( -D ) = " << AverageAperture << endl; /// DEBUG
 }
