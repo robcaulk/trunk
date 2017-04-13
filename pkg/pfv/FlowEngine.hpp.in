@@ -91,7 +91,6 @@ class TemplateFlowEngine_@TEMPLATE_FLOW_NAME@ : public PartialEngine
 		void updateVolumes (Solver& flow);
 		void initializeVolumes (Solver& flow);
 		void boundaryConditions(Solver& flow);
-		void copyImposedPandF();
 		void updateBCs () {
 			if (solver->tesselation().maxId>0) boundaryConditions(*solver);//avoids crash at iteration 0, when the packing is not bounded yet
 			else LOG_ERROR("updateBCs not applied");

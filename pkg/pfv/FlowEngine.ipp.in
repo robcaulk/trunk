@@ -105,7 +105,6 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 			if (debug) cerr<<"switch flow solver"<<endl;
 			if (useSolver==0) LOG_ERROR("background calculations not available for Gauss-Seidel");
 			
-//			copyImposedPandF(); // copy imposed values and find corresponding cells in new solver
 			if (!fluxChanged) { 
 				if (fluidBulkModulus>0 || doInterpolate) solver->interpolate (solver->T[solver->currentTes], backgroundSolver->T[backgroundSolver->currentTes]);
 //			cout << "finished interpolation" << endl;
@@ -156,41 +155,17 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
         timingDeltas->checkpoint ( "triangulate + init volumes" );
 }
 
-// function that carries imposed pressures and cells over to new tesselation
-template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >
-void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,solverT>::copyImposedPandF()
-{
-	RTriangulation& newTri = backgroundSolver->T[currentTes].Triangulation();
-	backgroundSolver->imposedP = vector<pair<CGT::Point,Real> >(solver->imposedP);
-	backgroundSolver->imposedF = vector<pair<CGT::Point,Real> >(solver->imposedF);
-	cout << "copied imposed F and P over" << endl;
-	backgroundSolver->IFCells.clear();
-	backgroundSolver->IPCells.clear();
-	cout << "IPF cells cleared" << endl;
-	for (unsigned int n=0; n<solver->imposedF.size(); n++){
-		CellHandle cell =newTri.locate(solver->imposedF[n].first);
-		cout << "cell found" << endl;
-		backgroundSolver->IFCells.push_back(cell);
-		cout << "cell pushed back to IFCells" << endl; 
-		cell->info().Pcondition=false;}
-	cout << "finished setting new cells flux" << endl;
-	for (unsigned int n=0; n<solver->imposedP.size(); n++){
-		CellHandle cell = newTri.locate(solver->imposedP[n].first);
-		backgroundSolver->IPCells.push_back(cell);
-		cell->info().p()=backgroundSolver->imposedP[n].second;}
-	cout << "finished setting new cells pressure" << endl;
-}
 
 template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >
 void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,solverT>::backgroundAction()
 {
 	if (useSolver<1) {LOG_ERROR("background calculations not available for Gauss-Seidel"); return;}
         buildTriangulation ( pZero,*backgroundSolver );
-	//FIXME: GS is computing too much, we need only matrix factorization in fact
+	//FIXME: GS is computing too much, we need only matrix factorization in fact  // rcaulk added factorizeOnly to factorize matrix only
 	backgroundSolver->factorizeOnly = true;
 	backgroundSolver->gaussSeidel(scene->dt);
 	backgroundSolver->factorizeOnly = false;
-	//FIXME(2): and here we need only cached variables, not forces
+	//FIXME(2): and here we need only cached variables, not forces  // rcaulk this appears to be taken care of? 
 	backgroundSolver->computeFacetForcesWithCache(/*onlyCache?*/ true);
 // 	boost::this_thread::sleep(boost::posix_time::seconds(5));
  	backgroundCompleted = true;
