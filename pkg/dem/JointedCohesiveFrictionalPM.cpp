@@ -79,6 +79,7 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	    // update body state with the number of broken bonds
 	    JCFpmState* st1=dynamic_cast<JCFpmState*>(b1->state.get());
 	    JCFpmState* st2=dynamic_cast<JCFpmState*>(b2->state.get());
+            phys->breakType = 0;
 	    st1->tensBreak+=1;
 	    st2->tensBreak+=1;
 	    st1->tensBreakRel+=1.0/st1->noIniLinks;
@@ -151,6 +152,7 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	    // update body state with the number of broken bonds
 	    JCFpmState* st1=dynamic_cast<JCFpmState*>(b1->state.get());
 	    JCFpmState* st2=dynamic_cast<JCFpmState*>(b2->state.get());
+            phys->breakType=1;
 	    st1->shearBreak+=1;
 	    st2->shearBreak+=1;
 	    st1->shearBreakRel+=1.0/st1->noIniLinks;
