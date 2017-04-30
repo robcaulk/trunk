@@ -65,7 +65,8 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 	if (pressureForce){
 		solver->gaussSeidel(scene->dt);
 		timingDeltas->checkpoint ( "Gauss-Seidel (includes matrix construct and factorization in single-thread mode)" );
-		solver->computeFacetForcesWithCache();}
+		solver->computeFacetForcesWithCache();} 
+
         timingDeltas->checkpoint ( "compute_Forces" );
         ///Application of vicscous forces
         scene->forces.sync();
@@ -107,10 +108,11 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 			
 			if (!fluxChanged) { 
 				if (fluidBulkModulus>0 || doInterpolate) solver->interpolate (solver->T[solver->currentTes], backgroundSolver->T[backgroundSolver->currentTes]);
-//			cout << "finished interpolation" << endl;
-			backgroundSolver->imposedP = vector<pair<CGT::Point,Real> >(solver->imposedP);
-			backgroundSolver->imposedF = vector<pair<CGT::Point,Real> >(solver->imposedF);				
-			solver=backgroundSolver; 
+//				cout << "finished interpolation" << endl;
+				backgroundSolver->imposedP = vector<pair<CGT::Point,Real> >(solver->imposedP);
+				backgroundSolver->imposedF = vector<pair<CGT::Point,Real> >(solver->imposedF);
+	
+				solver=backgroundSolver; 
 				
 			} else { 
 				fluxChanged = false;

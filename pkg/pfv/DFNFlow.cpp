@@ -168,7 +168,9 @@ class DFNFlowEngine : public DFNFlowEngineT
 {
 	public :
 	void trickPermeability(Solver* flow);
-    void interpolateCrack(Tesselation& Tes, Tesselation& NewTes);
+	void interpolateCrack(Tesselation& Tes, Tesselation& NewTes);
+	void computeLeakOff(Tesselation& initialTes, Tesselation& finalTes);
+	void computeLeakOff(const CellHandle& cell1,const CellHandle& cell2);
 	void trickPermeability (RTriangulation::Facet_circulator& facet,Real fracturePerm, RTriangulation::Finite_edges_iterator& edge, Solver* flow);
 	void trickPermeability (RTriangulation::Finite_edges_iterator& edge,Real fracturePerm, Solver* flow);
 	void setPositionsBuffer(bool current);
@@ -180,12 +182,24 @@ class DFNFlowEngine : public DFNFlowEngineT
     	Real maxAperture;
 	Real crackArea;
 	Real branchIntensity;
+	Real totalLeakOff; 
+	Real totalVolumePumpedIntoCells;
+	Real injectedVolume = 0;
+	bool startedPumping = false;
+	Real startedPumpingTime;
+	Real pumpingRate;
+	Real timePumping;
+	int lastTriangulationUpdate;
+	Real elapsedTime;
+	Real sumVi; Real sumVidelPK; Real sumVf;
 	int breakType;
 	Real getCrackHalfWidth() {return fractureHalfWidth;}
     	Real getAverageAperture() {return averageAperture;}
     	Real getMaxAperture() {return maxAperture;}
 	Real getCrackArea() {return crackArea;}
 	Real getBranchIntensity() {return branchIntensity;}
+	Real getTotalLeakOff() {return totalLeakOff;}
+	Real getLeakOffRate() {return leakOffRate;}
 	Point injectionCellCenter;
 // 	void computeTotalFractureArea(Real totalFracureArea,bool printFractureTotalArea);/// Trying to get fracture's surface
 //	Real totalFracureArea; /// Trying to get fracture's surface
@@ -206,6 +220,8 @@ class DFNFlowEngine : public DFNFlowEngineT
     	.def("getMaxAperture", &DFNFlowEngine::getMaxAperture, "report the max aperture")
 	.def("getCrackArea", &DFNFlowEngine::getCrackArea, "report the crack area")
 	.def("getBranchIntensity", &DFNFlowEngine::getBranchIntensity, "report branch intensity (fracture area/half length)")
+	.def("getTotalLeakOff", &DFNFlowEngine::getTotalLeakOff, "report totalLeak off using facet flux")
+	.def("getLeakOffRate", &DFNFlowEngine::getLeakOffRate, "report the leak-off rate")
 // 	.def("computeTotalFractureArea",&DFNFlowEngineT::computeTotalFractureArea," Compute and print the total fracture area of the network") /// Trying to get fracture's surface
 // 	.def("trickPermeability",&DFNFlowEngineT::trickPermeability,"measure the mean trickPermeability in the period")
 	)
@@ -254,11 +270,13 @@ void DFNFlowEngine::interpolateCrack(Tesselation& Tes, Tesselation& NewTes){
 		newCell->info().crack = oldCell->info().crack;
 		newCell->info().fractureTip = oldCell->info().fractureTip;
 		newCell->info().cellHalfWidth = oldCell->info().cellHalfWidth;
+		newCell->info().breakType = oldCell->info().breakType;
+		newCell->info().p() = oldCell->info().shiftedP();  // for computeLeakOff, otherwise these values are rightfully overwritten in FlowEngine's interpolation later
 //		newCell->info().id = oldCell->info().id;
 	}
     }
 
-// function used to change fractureTip info to false for cells neighboring new fractureTip = true cells. 
+// function used to change fractureTip info to false for cells neighboring new fractureTip = true cells. And compute leakoff??
 void DFNFlowEngine::checkOldTesselation(Tesselation& oldTes, Tesselation& newTes, const CellHandle& newCell1, const CellHandle& newCell2){
 	RTriangulation& Tri = oldTes.Triangulation();	
 	CVector center1 (0,0,0);
@@ -273,25 +291,58 @@ void DFNFlowEngine::checkOldTesselation(Tesselation& oldTes, Tesselation& newTes
        	for (int i = 0; i<=3; i++) { 
 		CellHandle oldNeighborCell = oldCell1->neighbor(i); 
 		if (oldNeighborCell->info().fractureTip==1) {
-		CVector neighborCenter (0,0,0);
-		for ( int k=0;k<4;k++ ) neighborCenter= neighborCenter + 0.25* (newTes.vertex(oldNeighborCell->vertex(k)->info().id())->point()-CGAL::ORIGIN);
-		CellHandle newNeighborCell = newTes.Triangulation().locate(Point(neighborCenter[0], neighborCenter[1], neighborCenter[2]));
-	newNeighborCell->info().fractureTip=0;
+			CVector neighborCenter (0,0,0);
+			for ( int k=0;k<4;k++ ) neighborCenter= neighborCenter + 0.25* (newTes.vertex(oldNeighborCell->vertex(k)->info().id())->point()-CGAL::ORIGIN);
+			CellHandle newNeighborCell = newTes.Triangulation().locate(Point(neighborCenter[0], neighborCenter[1], neighborCenter[2]));
+			newNeighborCell->info().fractureTip=0;
+		
 		}
+
 	}
 
-for (int i = 0; i<=3; i++) { 
+
+	for (int i = 0; i<=3; i++) { 
 		CellHandle oldNeighborCell = oldCell2->neighbor(i); 
 		if (oldNeighborCell->info().fractureTip==1) {
-		CVector neighborCenter (0,0,0);
-		for ( int k=0;k<4;k++ ) neighborCenter= neighborCenter + 0.25* (newTes.vertex(oldNeighborCell->vertex(k)->info().id())->point()-CGAL::ORIGIN);
-		CellHandle newNeighborCell = newTes.Triangulation().locate(Point(neighborCenter[0], neighborCenter[1], neighborCenter[2]));
-	newNeighborCell->info().fractureTip=0;
+			CVector neighborCenter (0,0,0);
+			for ( int k=0;k<4;k++ ) neighborCenter= neighborCenter + 0.25* (newTes.vertex(oldNeighborCell->vertex(k)->info().id())->point()-CGAL::ORIGIN);
+			CellHandle newNeighborCell = newTes.Triangulation().locate(Point(neighborCenter[0], neighborCenter[1], neighborCenter[2]));
+			newNeighborCell->info().fractureTip=0;
 
 		}
-	}
-}
 
+	}
+
+}
+	
+		
+
+
+
+// function used to APPROXIMATE the current total leakoff rate across the face of all fractures - not exact
+void DFNFlowEngine::computeLeakOff(const CellHandle& cell1,const CellHandle& cell2){
+Real neighborPressure1 = 0; Real neighborKnorm1 = 0; Real neighborPressure2 = 0; Real neighborKnorm2 = 0; Real numNeighbors=0; Real facetFlowRate;
+	if (cell1->info().isGhost || cell2->info().isGhost) return;
+	totalLeakOff -= cell1->info().dv(); totalLeakOff-= cell2->info().dv();
+	for (int k=0; k<4;k++) {
+		if (!cell1->neighbor(k)->info().crack){
+			facetFlowRate= cell1->info().kNorm()[k]*(cell1->info().p()-cell1->neighbor(k)->info().p());
+			totalLeakOff += facetFlowRate;
+//			cout << "permeability of facet " << cell1->info().kNorm()[k] << " pressure difference " << cell1->info().p()-cell1->neighbor(k)->info().p() << endl; 
+		}
+	}
+	for (int k=0; k<4;k++){
+		if (!cell2->neighbor(k)->info().crack){
+			facetFlowRate= cell2->info().kNorm()[k]*(cell2->info().p()-cell2->neighbor(k)->info().p());
+			totalLeakOff += facetFlowRate;
+//			cout << "permeability of facet " << cell2->info().kNorm()[k] << " pressure difference " << cell2->info().p()-cell1->neighbor(k)->info().p() << endl; 			
+		}
+	}
+			//cout << "facetFlowRate1 " << facetFlowRate1 << endl; 
+}
+	
+	
+	
 
 void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, Real fracturePerm, RTriangulation::Finite_edges_iterator& ed_it, Solver* flow)
 {
@@ -311,18 +362,18 @@ void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, R
     // if the fractured cell is newly fractured, must be at tip and therefore gives info about the fracture dimensions and stresses
 	if (!first && !cell1->info().crack && !cell1->info().isFictious && calcCrackHalfWidth && !flow->imposedF.empty()) {        
 	
-	Point& cellCenter = cell1->info();
-        CVector halfWidthVector = cellCenter - injectionCellCenter;
-        Real halfWidth = sqrt(halfWidthVector.squared_length());
-        cell1->info().cellHalfWidth = halfWidth;
-		if (halfWidth > fractureHalfWidth){
-			stepCrackHalfWidth = halfWidth;
-//			cell1->info().fractureTip = 1;
-		}
-	checkOldTesselation(solver->T[solver->currentTes], flow->T[flow->currentTes], cell1, cell2);
-//	cout<<"DFN ----- checked old tesselation" <<endl;	
-	cell1->info().fractureTip = cell2->info().fractureTip =1;	
-	cell1->info().crack = cell2->info().crack= 1;
+		Point& cellCenter = cell1->info();
+        	CVector halfWidthVector = cellCenter - injectionCellCenter;
+        	Real halfWidth = sqrt(halfWidthVector.squared_length());
+        	cell1->info().cellHalfWidth = halfWidth;
+			if (halfWidth > fractureHalfWidth){
+				stepCrackHalfWidth = halfWidth;
+//				cell1->info().fractureTip = 1;
+			}
+		checkOldTesselation(solver->T[solver->currentTes], flow->T[flow->currentTes], cell1, cell2);
+//		cout<<"DFN ----- checked old tesselation" <<endl;	
+		cell1->info().fractureTip = cell2->info().fractureTip =1;	
+		cell1->info().crack = cell2->info().crack= 1;
 	
         }
 	cell2->info().blocked = cell1->info().blocked = cell2->info().Pcondition = cell1->info().Pcondition = false;//those ones will be included in the flow problem
@@ -343,6 +394,11 @@ void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, R
 			cell2->info().crackArea += halfCrackArea;
 			crackArea += 2*halfCrackArea;
 		}
+
+computeLeakOff(cell1, cell2);
+
+
+	
 }
 
 void DFNFlowEngine::trickPermeability(RTriangulation::Finite_edges_iterator& edge, Real fracturePerm,Solver* flow)
@@ -362,9 +418,9 @@ void DFNFlowEngine::trickPermeability(Solver* flow)
 {
 	const RTriangulation& Tri = flow->T[flow->currentTes].Triangulation();
 //	cout << "DFN --- Assigned tri" <<endl;
-    if (!first) interpolateCrack(solver->T[solver->currentTes], flow->T[flow->currentTes]);
+    	if (!first) interpolateCrack(solver->T[solver->currentTes], flow->T[flow->currentTes]);
 //	cout << "DFN ---- interpolated crack" << endl;
-    const JCFpmPhys* jcfpmphys;
+    	JCFpmPhys* jcfpmphys;
 	const shared_ptr<InteractionContainer> interactions = scene->interactions;
 	int numberOfCrackedOrJoinedInteractions = 0;
 	int numberOfTrickedCells = 0;
@@ -374,9 +430,27 @@ void DFNFlowEngine::trickPermeability(Solver* flow)
 	crackArea = 0;
 	branchIntensity = 0;
 	maxAperture = 0;
+	totalLeakOff= 0;
+	pumpingRate = 0;
+//	leakOffRate = 0;
+	timePumping = 0;
+	elapsedTime = 0;
+//	sumVi = 0; sumVidelPK = 0; sumVf =0;
+	totalVolumePumpedIntoCells = 0;
+//	if (!first) elapsedTime = (scene->iter - lastTriangulationUpdate)*scene->dt;
+	lastTriangulationUpdate = scene->iter;
 	
 //	Real totalFracureArea=0; /// Trying to get fracture's surface
-	if (!flow->imposedF.empty()) injectionCellCenter = flow->IFCells[0]->info();
+	if (!flow->imposedF.empty()){
+		injectionCellCenter = flow->IFCells[0]->info();  // used for fracture halflength of a single injection and single fracture
+//		if (!startedPumping) startedPumpingTime = scene->time;
+		
+//		timePumping = scene->time - startedPumpingTime;
+		for (unsigned int n=0; n<flow->imposedF.size(); n++) pumpingRate += flow->imposedF[n].second;
+//		for (unsigned int n=0; n<flow.imposedF.size();n++) injectedVolume+=flow->imposedF[n].second * timePumping; //used for leakoffrate
+//		startedPumping = true;
+//		lastTriangulationUpdate = scene->iter;
+	}
 //	cout << "DFN ---- defined injection Cell center" << endl;
 	stepCrackHalfWidth = 0; // The fracture half width
 // 	const shared_ptr<IGeom>& ig;
@@ -410,7 +484,8 @@ void DFNFlowEngine::trickPermeability(Solver* flow)
 				numberOfTrickedCells += 1;
 				sumOfPermeability += fracturePerm;
 // 				cout<<"aperture = " << aperture <<endl;
-                	if (aperture > maxAperture) maxAperture=aperture;
+				jcfpmphys->onFracture=true;
+                		if (aperture > maxAperture) maxAperture=aperture;
 				SumOfApertures += aperture;
 				trickPermeability(edge, fracturePerm, flow);
 // 				trickPermeability(edge, jcfpmphys->crackJointAperture, residualAperture); // we should be able to use this line
@@ -424,6 +499,11 @@ void DFNFlowEngine::trickPermeability(Solver* flow)
 
 	if (stepCrackHalfWidth > fractureHalfWidth) fractureHalfWidth = stepCrackHalfWidth;
 	branchIntensity = crackArea/fractureHalfWidth;
+//	leakOffRate = pumpingRate - (totalVolumePumpedIntoCells/timePumping);
+//	cout << "pumpingRate " << pumpingRate << " volumePumpedIntoCells " << totalVolumePumpedIntoCells << " timePumping " << timePumping << endl;
+	
+//	Real volumeLeakOff = pumpingRate*elapsedTime + sumVi - sumVidelPK - sumVf;
+//	if (!first) leakOffRate = volumeLeakOff / elapsedTime; 
 //	cout << "fracture half width = " << fractureHalfWidth << endl;
 // 	cout << " Average aperture in joint ( -D ) = " << AverageAperture << endl; /// DEBUG
 }
