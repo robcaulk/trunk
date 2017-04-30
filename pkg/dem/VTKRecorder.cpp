@@ -353,6 +353,9 @@ void VTKRecorder::action(){
 	vtkSmartPointer<vtkDoubleArray> intrIsOnJoint = vtkSmartPointer<vtkDoubleArray>::New();
 	intrIsOnJoint->SetNumberOfComponents(1);
 	intrIsOnJoint->SetName("isOnJoint");
+	vtkSmartPointer<vtkDoubleArray> intrOnFracture = vtkSmartPointer<vtkDoubleArray>::New();
+	intrOnFracture->SetNumberOfComponents(1);
+	intrOnFracture->SetName("onFracture");
 	
 	// extras for cracks
 	vtkSmartPointer<vtkPoints> crackPos = vtkSmartPointer<vtkPoints>::New();
@@ -369,6 +372,9 @@ void VTKRecorder::action(){
 	vtkSmartPointer<vtkDoubleArray> crackNorm = vtkSmartPointer<vtkDoubleArray>::New();
 	crackNorm->SetNumberOfComponents(3);
 	crackNorm->SetName("crackNorm");
+	vtkSmartPointer<vtkDoubleArray> onFrac = vtkSmartPointer<vtkDoubleArray>::New();
+	onFrac->SetNumberOfComponents(1);
+	onFrac->SetName("onFrac");
 	
 #ifdef YADE_LIQMIGRATION
 	vtkSmartPointer<vtkDoubleArray> liqVol = vtkSmartPointer<vtkDoubleArray>::New();
@@ -489,6 +495,7 @@ void VTKRecorder::action(){
 					const JCFpmPhys* jcfpmphys = YADE_CAST<JCFpmPhys*>(I->phys.get());
 					intrIsCohesive->InsertNextValue(jcfpmphys->isCohesive);
 					intrIsOnJoint->InsertNextValue(jcfpmphys->isOnJoint);
+					intrOnFracture->InsertNextValue(jcfpmphys->onFracture);  // trying to visualize esjm
 					intrForceN->InsertNextValue(fn);
 				} else {
 					intrForceN->InsertNextValue(fn);
@@ -962,6 +969,7 @@ void VTKRecorder::action(){
 		if (recActive[REC_JCFPM]) { 
 			intrPd->GetCellData()->AddArray(intrIsCohesive);
 			intrPd->GetCellData()->AddArray(intrIsOnJoint);
+			intrPd->GetCellData()->AddArray(intrOnFracture);
 		}
 		if (recActive[REC_WPM]){
 			intrPd->GetCellData()->AddArray(wpmNormalForce);
@@ -1014,9 +1022,9 @@ void VTKRecorder::action(){
 		if(file){
 			 while ( !file.eof() ){
 				std::string line;
-				Real i,p0,p1,p2,t,s,n0,n1,n2;
+				Real i,p0,p1,p2,t,s,n0,n1,n2, frac;
 				while ( std::getline(file, line)) {/* writes into string "line", a line of file "file". To go along diff. lines*/
-					file >> i >> p0 >> p1 >> p2 >> t >> s >> n0 >> n1 >> n2;
+					file >> i >> p0 >> p1 >> p2 >> t >> s >> n0 >> n1 >> n2 >> frac;
 					vtkIdType pid[1];
 					pid[0] = crackPos->InsertNextPoint(p0, p1, p2);
 					crackCells->InsertNextCell(1,pid);
@@ -1025,6 +1033,7 @@ void VTKRecorder::action(){
 					iter->InsertNextValue(i);
 					Real n[3] = { n0, n1, n2 };
 					crackNorm->InsertNextTupleValue(n);
+					onFrac->InsertNextValue(frac);
 				}
 			}
 			 file.close();
@@ -1036,7 +1045,8 @@ void VTKRecorder::action(){
 		crackUg->GetPointData()->AddArray(crackType);
 		crackUg->GetPointData()->AddArray(crackSize);
 		crackUg->GetPointData()->AddArray(crackNorm); //see https://www.mail-archive.com/paraview@paraview.org/msg08166.html to obtain Paraview 2D glyphs conforming to this normal 
-		
+		crackUg->GetPointData()->AddArray(onFrac);
+
 		vtkSmartPointer<vtkXMLUnstructuredGridWriter> writer = vtkSmartPointer<vtkXMLUnstructuredGridWriter>::New();
 		if(compress) writer->SetCompressor(compressor);
 		if(ascii) writer->SetDataModeToAscii();
