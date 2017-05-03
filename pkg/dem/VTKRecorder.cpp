@@ -363,6 +363,9 @@ void VTKRecorder::action(){
 	vtkSmartPointer<vtkDoubleArray> crackType = vtkSmartPointer<vtkDoubleArray>::New();
 	crackType->SetNumberOfComponents(1);
 	crackType->SetName("crackType");
+	vtkSmartPointer<vtkDoubleArray> crackOnFrac = vtkSmartPointer<vtkDoubleArray>::New();
+	crackOnFrac->SetNumberOfComponents(1);
+	crackOnFrac->SetName("crackOnFrac");
 	vtkSmartPointer<vtkDoubleArray> crackSize = vtkSmartPointer<vtkDoubleArray>::New();
 	crackSize->SetNumberOfComponents(1);
 	crackSize->SetName("crackSize");
@@ -1014,13 +1017,14 @@ void VTKRecorder::action(){
 		if(file){
 			 while ( !file.eof() ){
 				std::string line;
-				Real i,p0,p1,p2,t,s,n0,n1,n2;
+				Real i,p0,p1,p2,t,s,n0,n1,n2, onFrac;
 				while ( std::getline(file, line)) {/* writes into string "line", a line of file "file". To go along diff. lines*/
-					file >> i >> p0 >> p1 >> p2 >> t >> s >> n0 >> n1 >> n2;
+					file >> i >> p0 >> p1 >> p2 >> t >> s >> n0 >> n1 >> n2 >> onFrac;
 					vtkIdType pid[1];
 					pid[0] = crackPos->InsertNextPoint(p0, p1, p2);
 					crackCells->InsertNextCell(1,pid);
 					crackType->InsertNextValue(t);
+					crackOnFrac->InsertNextValue(onFrac);
 					crackSize->InsertNextValue(s);
 					iter->InsertNextValue(i);
 					Real n[3] = { n0, n1, n2 };
@@ -1034,6 +1038,7 @@ void VTKRecorder::action(){
 		crackUg->SetCells(VTK_VERTEX, crackCells);
 		crackUg->GetPointData()->AddArray(iter);
 		crackUg->GetPointData()->AddArray(crackType);
+		crackUg->GetPointData()->AddArray(crackOnFrac);
 		crackUg->GetPointData()->AddArray(crackSize);
 		crackUg->GetPointData()->AddArray(crackNorm); //see https://www.mail-archive.com/paraview@paraview.org/msg08166.html to obtain Paraview 2D glyphs conforming to this normal 
 		
