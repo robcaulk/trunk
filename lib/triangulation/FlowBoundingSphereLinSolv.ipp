@@ -528,6 +528,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::eigenSolve(Real dt)
 		}
 		factorizedEigenSolver = true;
 	}
+	// backgroundAction only wants to factorize, no need to solve and copy to cells.
 	if (!factorizeOnly){
 		openblas_set_num_threads(numSolveThreads);
 		ex = eSolver.solve(eb);
