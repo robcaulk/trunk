@@ -388,7 +388,7 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 	  contactPhysics->ks = 2.*E1*R1*v1*E2*R2*v2/(E1*R1*v1+E2*R2*v2);
 	contactPhysics->tanFrictionAngle = std::tan(std::min(f1,f2));
 
-	
+	if (stiffnessWeibullShapeParameter!=0) distributeStiffnesses(contactPhysics);
 	// cohesive properties
 	///to set if the contact is cohesive or not
 	if ( ((cohesiveTresholdIteration < 0) || (scene->iter < cohesiveTresholdIteration)) && (std::min(SigT1,SigT2)>0 || std::min(Coh1,Coh2)>0) && (yade1->type == yade2->type)){ 
@@ -399,21 +399,21 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 	
 	
 	if ( contactPhysics->isCohesive ) {
-		// stochastic bond strength assignment
-		if (yade1->tensileStrengthDeviation>0 && yade1->cohStrengthDeviation>0) {
-			std::random_device rd;
-			std::mt19937 e2(rd());
-			std::normal_distribution<Real> tensileDistribution(min(SigT1,SigT2), yade1->tensileStrengthDeviation);
-			std::normal_distribution<Real> cohDistribution(min(Coh1,Coh2), yade1->cohStrengthDeviation);
-			Real SigT = tensileDistribution(e2); 
-			Real Coh = cohDistribution(e2);
-			contactPhysics->FnMax = SigT*contactPhysics->crossSection;
-	  		contactPhysics->FsMax = Coh*contactPhysics->crossSection;
-		}
-		else {
-	  	contactPhysics->FnMax = std::min(SigT1,SigT2)*contactPhysics->crossSection;
+		contactPhysics->FnMax = std::min(SigT1,SigT2)*contactPhysics->crossSection;
 	  	contactPhysics->FsMax = std::min(Coh1,Coh2)*contactPhysics->crossSection;
-		}	
+		// stochastic bond strength assignment
+		if (yade1->tensileStrengthDeviation>0 && yade1->cohStrengthDeviation>0) distributeStrengthsNormal(contactPhysics, yade1, yade2);
+		if (strengthWeibullShapeParameter!=0) distributeStrengthsWeibull(contactPhysics, yade1, yade2);
+		if (yade1->tensileStrengthDeviation>0 && strengthWeibullShapeParameter!=0) cerr << "You tried to distribute the strengths according to gaussian and weibull. Using weibull." << endl;
+//			std::random_device rd;
+//			std::mt19937 e2(rd());
+//			std::normal_distribution<Real> tensileDistribution(min(SigT1,SigT2), yade1->tensileStrengthDeviation);
+//			std::normal_distribution<Real> cohDistribution(min(Coh1,Coh2), yade1->cohStrengthDeviation);
+//			Real SigT = tensileDistribution(e2); 
+//			Real Coh = cohDistribution(e2);
+//			contactPhysics->FnMax = SigT*contactPhysics->crossSection;
+//	  		contactPhysics->FsMax = Coh*contactPhysics->crossSection;
+//		}
 	}
 
 	/// +++ Jointed interactions ->NOTE: geom->normal is oriented from 1 to 2 / jointNormal from plane to sphere 
@@ -476,5 +476,37 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 	}
 	interaction->phys = contactPhysics;
 }
+
+
+void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::distributeStiffnesses(shared_ptr<JCFpmPhys> contactPhysics){
+	std::random_device rd;
+	std::mt19937 e2(rd());
+	std::weibull_distribution<Real> weibullDistribution(stiffnessWeibullShapeParameter, 1.);
+	Real cStiff = weibullDistribution(e2); 
+	contactPhysics->kn = cStiff*contactPhysics->kn;
+	contactPhysics->ks = cStiff*contactPhysics->ks;	
+}
+
+void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::distributeStrengthsNormal(shared_ptr<JCFpmPhys> contactPhysics,const shared_ptr<JCFpmMat>& yade1,const shared_ptr<JCFpmMat>& yade2 ){
+	std::random_device rd;
+	std::mt19937 e2(rd());
+	std::normal_distribution<Real> tensileDistribution(min(yade1->tensileStrength,yade2->tensileStrength), yade1->tensileStrengthDeviation);
+	std::normal_distribution<Real> cohDistribution(min(yade1->cohesion,yade2->cohesion), yade1->cohStrengthDeviation);
+	Real SigT = tensileDistribution(e2); 
+	Real Coh = cohDistribution(e2);
+	contactPhysics->FnMax = SigT*contactPhysics->crossSection;
+	contactPhysics->FsMax = Coh*contactPhysics->crossSection;
+}
+
+void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::distributeStrengthsWeibull(shared_ptr<JCFpmPhys> contactPhysics,const shared_ptr<JCFpmMat>& yade1,const shared_ptr<JCFpmMat>& yade2 ){
+	std::random_device rd;
+	std::mt19937 e2(rd());
+	std::weibull_distribution<Real> weibullDistribution(strengthWeibullShapeParameter, 1.);
+	Real cStrength = weibullDistribution(e2);
+	contactPhysics->FnMax = cStrength*min(yade1->tensileStrength,yade2->tensileStrength)*contactPhysics->crossSection;
+	contactPhysics->FsMax = cStrength*min(yade1->cohesion,yade2->cohesion)*contactPhysics->crossSection;
+}
+	
+
 
 JCFpmPhys::~JCFpmPhys(){}
