@@ -262,7 +262,7 @@ void DFNFlowEngine::interpolateCrack(Tesselation& Tes, Tesselation& NewTes){
 
 		if (oldCell->info().crack && !oldCell->info().fictious()){
 			Real facetFlowRate = 0;
-			//facetFlowRate -= oldCell->info().dv();
+			facetFlowRate -= oldCell->info().dv();
 			for (int k=0; k<4;k++) {
 				
 				if (!oldCell->neighbor(k)->info().crack){
