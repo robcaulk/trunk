@@ -82,6 +82,7 @@ FlowBoundingSphereLinSolv<_Tesselation,FlowType>::FlowBoundingSphereLinSolv(): F
 	pTime1=0;pTime2=0;
 	#ifdef EIGENSPARSE_LIB
 	factorizedEigenSolver=false;
+	factorizeOnly = false;
 	numFactorizeThreads=1;
 	numSolveThreads=1;
 	#endif
@@ -527,10 +528,13 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::eigenSolve(Real dt)
 		}
 		factorizedEigenSolver = true;
 	}
-	openblas_set_num_threads(numSolveThreads);
-	ex = eSolver.solve(eb);
-	for (int k=0; k<ncols; k++) T_x[k]=ex[k];
-	copyLinToCells();
+	// backgroundAction only wants to factorize, no need to solve and copy to cells.
+	if (!factorizeOnly){
+		openblas_set_num_threads(numSolveThreads);
+		ex = eSolver.solve(eb);
+		for (int k=0; k<ncols; k++) T_x[k]=ex[k];
+		copyLinToCells();
+	}
 #else
 	cerr<<"Flow engine not compiled with eigen, nothing computed if useSolver=3"<<endl;
 #endif
