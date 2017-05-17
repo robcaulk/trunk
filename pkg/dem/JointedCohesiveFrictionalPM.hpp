@@ -56,6 +56,7 @@ REGISTER_SERIALIZABLE(JCFpmMat);
 class JCFpmPhys: public NormShearPhys {
 	public:
 		virtual ~JCFpmPhys();
+		
 		YADE_CLASS_BASE_DOC_ATTRS_CTOR_PY(JCFpmPhys,NormShearPhys,"Representation of a single interaction of the JCFpm type, storage for relevant parameters",
 			((Real,initD,0,,"equilibrium distance for interacting particles. Computed as the interparticular distance at first contact detection."))
 			((bool,isCohesive,false,,"If false, particles interact in a frictional way. If true, particles are bonded regarding the given :yref:`cohesion<JCFpmMat.cohesion>` and :yref:`tensile strength<JCFpmMat.tensileStrength>` (or their jointed variants)."))
@@ -73,6 +74,8 @@ class JCFpmPhys: public NormShearPhys {
 			((Real,crackJointAperture,0,,"Relative displacement between 2 spheres (in case of a crack it is equivalent of the crack aperture)"))
 			((int, breakType,2,,"Identifies the break.2 is not broken 0 is tensile 1 is shear (following cracks file nomenclature). Used in DFNFlow vtk writter"))
 			((bool, onFracture,0,,"Flag for interactions that are associated with fractured cells. Used for extended smooth joint logic."))
+
+			((bool, breakOccurred,0,,"Flag used to trigger retriangulation as soon as a cohesive bond breaks in FlowEngine (for DFNFlow use only)"))
 			,
 			createIndex();
 			,
@@ -86,13 +89,18 @@ REGISTER_SERIALIZABLE(JCFpmPhys);
 class Ip2_JCFpmMat_JCFpmMat_JCFpmPhys: public IPhysFunctor{
 	public:
 		virtual void go(const shared_ptr<Material>& pp1, const shared_ptr<Material>& pp2, const shared_ptr<Interaction>& interaction);
+		void distributeStiffnesses(shared_ptr<JCFpmPhys> contactPhysics);
+		void distributeStrengthsNormal(shared_ptr<JCFpmPhys> contactPhysics,const shared_ptr<JCFpmMat>& yade1,const shared_ptr<JCFpmMat>& yade2);
+		void distributeStrengthsWeibull(shared_ptr<JCFpmPhys> contactPhysics,const shared_ptr<JCFpmMat>& yade1,const shared_ptr<JCFpmMat>& yade2);
 		FUNCTOR2D(JCFpmMat,JCFpmMat);
 		DECLARE_LOGGER;
-		
+	
                 YADE_CLASS_BASE_DOC_ATTRS(Ip2_JCFpmMat_JCFpmMat_JCFpmPhys,IPhysFunctor,"Converts 2 :yref:`JCFpmMat` instances to one :yref:`JCFpmPhys` instance, with corresponding parameters. See :yref:`JCFpmMat` and [Duriez2016]_ for details",
 			((int,cohesiveTresholdIteration,1,,"should new contacts be cohesive? If strictly negativ, they will in any case. If positiv, they will before this iter, they won't afterward."))
 			((bool,useAvgRadius,0,,"Use the average radius for crossSection computation instead of minimum (false by default)."))
 			((Real,totalAvgRadius,0,,"Use constant value for the crossSection calculation. Should be coupled with :yref:`tensile strength distribution<JCFpmMat.tensileStrengthDeviation>` and :yref:`cohesive strength distribution<JCFpmMat.cohStrengthDeviation>`  Value > 0 activates it. (should use mean radius from sphere pack here, but could use other values)."))
+			((Real,stiffnessWeibullShapeParameter,0,,"Shape parameter for weibull distributed stiffness factor (c_stiff) kn = c_stiff*2.*E1*R1*E2*R2/(E1*R1+E2*R2). Any value other than 0 activates this stiffness factor for all interactions. Scale parameter for weibull distribution is 1. ; "))
+			((Real,strengthWeibullShapeParameter,0,,"Shape parameter used to distribute a bond strength factor (cStrength) according to weibull distribution (e.g. FnMax = cStrength*tensileStrength*crosssection). Activated for any value other than 0 (cannot be actiavted at same time as :yref:`tensileStrengthDeviation<JCFpmMat.tensStrengthDeviation>`"))
 		);
 		
 };
