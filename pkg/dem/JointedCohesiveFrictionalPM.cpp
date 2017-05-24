@@ -376,7 +376,7 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 	contactPhysics->crossSection = Mathr::PI*pow((R1+R2)/2,2);  // use the average radius instead of the minimum
 	} else if (totalAvgRadius > 0) {
 	contactPhysics->crossSection = Mathr::PI*pow(totalAvgRadius, 2);  // use total average radius
-	}
+	} else if(xSectionWeibullShapeParameter>0 && xSectionWeibullScaleParameter>0) distributeCrossSectionsWeibull(contactPhysics);	
 	else {
 	contactPhysics->crossSection = Mathr::PI*pow(min(R1,R2),2); 
 	}
@@ -407,15 +407,6 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 		if (yade1->tensileStrengthDeviation>0 && yade1->cohStrengthDeviation>0) distributeStrengthsNormal(contactPhysics, yade1, yade2);
 		if (strengthWeibullShapeParameter!=0) distributeStrengthsWeibull(contactPhysics, yade1, yade2);
 		if (yade1->tensileStrengthDeviation>0 && strengthWeibullShapeParameter!=0) cerr << "You tried to distribute the strengths according to gaussian and weibull. Using weibull." << endl;
-//			std::random_device rd;
-//			std::mt19937 e2(rd());
-//			std::normal_distribution<Real> tensileDistribution(min(SigT1,SigT2), yade1->tensileStrengthDeviation);
-//			std::normal_distribution<Real> cohDistribution(min(Coh1,Coh2), yade1->cohStrengthDeviation);
-//			Real SigT = tensileDistribution(e2); 
-//			Real Coh = cohDistribution(e2);
-//			contactPhysics->FnMax = SigT*contactPhysics->crossSection;
-//	  		contactPhysics->FsMax = Coh*contactPhysics->crossSection;
-//		}
 	}
 
 	/// +++ Jointed interactions ->NOTE: geom->normal is oriented from 1 to 2 / jointNormal from plane to sphere 
@@ -507,6 +498,14 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::distributeStrengthsWeibull(shared_ptr<JCFp
 	Real cStrength = weibullDistribution(e2);
 	contactPhysics->FnMax = cStrength*min(yade1->tensileStrength,yade2->tensileStrength)*contactPhysics->crossSection;
 	contactPhysics->FsMax = cStrength*min(yade1->cohesion,yade2->cohesion)*contactPhysics->crossSection;
+}
+
+void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::distributeCrossSectionsWeibull(shared_ptr<JCFpmPhys> contactPhysics){
+	std::random_device rd;
+	std::mt19937 e2(rd());
+	std::weibull_distribution<Real> weibullDistribution(xSectionWeibullShapeParameter, xSectionWeibullScaleParameter);
+	Real interactingRadius = scaleFactor*weibullDistribution(e2)/2.;
+	contactPhysics->crossSection = Mathr::PI*pow(interactingRadius,2);
 }
 	
 
