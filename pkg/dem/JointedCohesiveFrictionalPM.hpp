@@ -92,6 +92,7 @@ class Ip2_JCFpmMat_JCFpmMat_JCFpmPhys: public IPhysFunctor{
 		void distributeStiffnesses(shared_ptr<JCFpmPhys> contactPhysics);
 		void distributeStrengthsNormal(shared_ptr<JCFpmPhys> contactPhysics,const shared_ptr<JCFpmMat>& yade1,const shared_ptr<JCFpmMat>& yade2);
 		void distributeStrengthsWeibull(shared_ptr<JCFpmPhys> contactPhysics,const shared_ptr<JCFpmMat>& yade1,const shared_ptr<JCFpmMat>& yade2);
+		void distributeCrossSectionsWeibull(shared_ptr<JCFpmPhys> contactPhysics);
 		FUNCTOR2D(JCFpmMat,JCFpmMat);
 		DECLARE_LOGGER;
 	
@@ -101,6 +102,9 @@ class Ip2_JCFpmMat_JCFpmMat_JCFpmPhys: public IPhysFunctor{
 			((Real,totalAvgRadius,0,,"Use constant value for the crossSection calculation. Should be coupled with :yref:`tensile strength distribution<JCFpmMat.tensileStrengthDeviation>` and :yref:`cohesive strength distribution<JCFpmMat.cohStrengthDeviation>`  Value > 0 activates it. (should use mean radius from sphere pack here, but could use other values)."))
 			((Real,stiffnessWeibullShapeParameter,0,,"Shape parameter for weibull distributed stiffness factor (c_stiff) kn = c_stiff*2.*E1*R1*E2*R2/(E1*R1+E2*R2). Any value other than 0 activates this stiffness factor for all interactions. Scale parameter for weibull distribution is 1. ; "))
 			((Real,strengthWeibullShapeParameter,0,,"Shape parameter used to distribute a bond strength factor (cStrength) according to weibull distribution (e.g. FnMax = cStrength*tensileStrength*crosssection). Activated for any value other than 0 (cannot be actiavted at same time as :yref:`tensileStrengthDeviation<JCFpmMat.tensStrengthDeviation>`"))
+			((Real,xSectionWeibullShapeParameter,0,,"Shape parameter used to generate interaction radii for the crossSectional areas (changing strength criteria only) according to Weibull distribution. Activated for any value other than 0. Needs to be combined with a :yref:`scale parameter<Ip2_JCFpmMat_JCFpmPhys.xSectionScaleParameter>` (takes precedence over :yref:`useAvgRadius<Ip2_JCFpmMat_JCFpmPhys.useAvgRadius>` and :yref:`totalAvgRadius<Ip2_JCFpmMat_JCFpmPhys.totalAvgRadius>`)"))
+			((Real,xSectionWeibullScaleParameter,0,,"Scale parameter used to generate interaction radii for the crosssectional areas (changing strength criteria only) according to Weibull distribution. Activated for any value other than 0. Needs to be combined with a :yref:`shape parameter<Ip2_JCFpmMat_JCFpmPhys.xSectionShapeParameter>` (takes precedence over :yref:`useAvgRadius<Ip2_JCFpmMat_JCFpmPhys.useAvgRadius>` and :yref:`totalAvgRadius<Ip2_JCFpmMat_JCFpmPhys.totalAvgRadius>`)"))
+			((Real,scaleFactor,1,,"Scale factor used to scale your simulation size up from the distribution determined by thin-section analysis (factors the radius generaated by :yref:`shape parameter<Ip2_JCFpmMat_JCFpmPhys.xSectionShapeParameter>` and :yref:`scale parameter<Ip2_JCFpmMat_JCFpmPhys.xSectionScaleParameter>`"))
 		);
 		
 };
