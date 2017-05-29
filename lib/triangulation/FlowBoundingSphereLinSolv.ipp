@@ -83,9 +83,20 @@ FlowBoundingSphereLinSolv<_Tesselation,FlowType>::FlowBoundingSphereLinSolv(): F
 	#ifdef EIGENSPARSE_LIB
 	factorizedEigenSolver=false;
 	factorizeOnly = false;
-	numFactorizeThreads=1;
-	numSolveThreads=1;
+	numFactorizeThreads=omp_get_max_threads();
+	numSolveThreads=omp_get_max_threads();
 	#endif
+	#ifdef TRILINOS_LIB
+//	Epetra_SerialComm Comm;
+//	int numThreads = omp_get_max_threads();
+	//int numGlobElems = -1;
+//	int indexBase = 0;
+//	Epetra_Map Map(-1, numThreads, indexBase, Comm);
+//	Epetra_CrsMatrix amesosA(Copy, Map, 0);
+	//Epetra_RowMatrix amesosA;
+//	Epetra_Vector amesosx(Map);
+//	Epetra_Vector amesosb(Map);
+	#endif	
 }
 
 
@@ -147,9 +158,9 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
 	RTriangulation& Tri = T[currentTes].Triangulation();
 	int n_cells=Tri.number_of_finite_cells();
 	vector<int> clen;
-	vector<int> is;
-	vector<int> js;
-	vector<double> vs;
+//	vector<int> is;
+//	vector<int> js;
+//	vector<double> vs;
 	if (!areCellsOrdered) {
 		T_nnz=0;
 		ncols=0;
@@ -268,16 +279,65 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
 				(T_A->rowind)[clen[j]] = i;
 				clen[j] ++;
 	// 			cerr<<"i="<< i <<" j="<< j<<" v="<<vs[k]<<" clen[j]="<<clen[j]-1<<endl;
+
+
+
+
+
 			}
 		#endif //TAUCS_LIB
 		#ifdef EIGENSPARSE_LIB
-		} else if (useSolver==3){
+		} else if (useSolver==3 || useSolver==4){
+			
 			tripletList.clear(); tripletList.resize(T_nnz);
 			for(int k=0;k<T_nnz;k++) tripletList[k]=ETriplet(is[k]-1,js[k]-1,vs[k]);
- 			A.resize(ncols,ncols);
-			A.setFromTriplets(tripletList.begin(), tripletList.end());
+			if (useSolver ==3){
+ 				A.resize(ncols,ncols);
+				A.setFromTriplets(tripletList.begin(), tripletList.end());
+			}
+			if (useSolver==4){
+				rowMajorA.resize(ncols,ncols);
+				rowMajorA.setFromTriplets(tripletList.begin(), tripletList.end());
+			}
+		#endif
+		#ifdef TRILINOS_LIB
+		} else if (useSolver==5){
+			//int fuckAmesos = true;			
+			//Epetra_SerialComm Comm;
+			// Construct map that puts same number of equations on each processor
+			//Epetra_Map newMap(-1, ncols, 0, Comm);
+			//Epetra_Map Map(-1,ncols,0,Comm);
+			//int NumGlobalElements = Map.NumGlobalElements();
+
+			//create Epetra_Matrix
+			//amesosA.ReplaceRowMap(newMap);
+			//Epetra_CrsMatrix amesosA(Copy, Map, ncols);
+
+			//Add rows one-at-a-time
+			//double negOne = -1.0;
+			//double posTwo = 2.0;
+			//for (int i=0; i<ncols; i++){
+			//	int GlobalRow = A.GRID(i); int RowLess1 = GlobalRow-1; intRowPlus1 = GlobalRow+1;
+			//	if (RowLess1!=-1) A.InsertGlobalValues(GlobalRow, 1, &negOne, &RowLess1);
+			//	if (RowPlus1!=NumGlobalElements) A.InsertGlobalValues(GlobalRow, 1, &negOne, &RowPlus1);
+			//	A.InsertGlobalValues(GlobalRow, 1, &posTwo, &GlobalRow);
+
+			//for (int k=0; k<T_nnz; k++){
+			//	int row = is[k];int col=js[k];Real val=vs[k]; 
+			//	amesosA.InsertGlobalValues(row, 1, &val, &col);
+			//}
+			
+			// Finish up 
+			//amesosA.FillComplete();
+			//amesosx(Map);
+			//amesosb(Map);
+			//amesosx.ReplaceMap(newMap);
+			//amesosb.ReplaceMap(newMap);
 		#endif
 		}
+
+
+		
 		isLinearSystemSet=true;
 	}
 	return ncols;
@@ -531,12 +591,176 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::eigenSolve(Real dt)
 	// backgroundAction only wants to factorize, no need to solve and copy to cells.
 	if (!factorizeOnly){
 		openblas_set_num_threads(numSolveThreads);
+		
 		ex = eSolver.solve(eb);
 		for (int k=0; k<ncols; k++) T_x[k]=ex[k];
 		copyLinToCells();
 	}
 #else
 	cerr<<"Flow engine not compiled with eigen, nothing computed if useSolver=3"<<endl;
+#endif
+	return 0;
+}
+
+
+//iterative conjugate gradient solve
+template<class _Tesselation, class FlowType>
+int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::conjugateGradientSolve(Real dt)
+{
+#ifdef EIGENSPARSE_LIB
+	if (!isLinearSystemSet || (isLinearSystemSet && reApplyBoundaryConditions()) || !updatedRHS) ncols = setLinearSystem(dt);
+	copyCellsToLin(dt);
+	//FIXME: we introduce new Eigen vectors, then we have to copy from/to c-arrays, can be optimized later
+	Eigen::VectorXd eb(ncols); Eigen::VectorXd ex(ncols);
+	for (int k=0; k<ncols; k++) eb[k]=T_bv[k];
+	if (!factorizedEigenSolver) {
+		//ConjugateGradient<SparseMatrix<double>, Lower|Upper> cg;
+		eguess = Eigen::VectorXd::Zero(ncols);
+		openblas_set_num_threads(omp_get_max_threads());
+		omp_set_num_threads(omp_get_max_threads());
+		Eigen::setNbThreads(omp_get_max_threads());
+		//cout << "About to compute A" << endl;
+		//cg.compute(A);	
+		//cg.setTolerance(tolerance);
+		//cg.setMaxIterations(200000);
+		//eSolver2.compute(A);
+		biCGSolve.setTolerance(tolerance);
+		biCGSolve.setMaxIterations(200000);		
+		biCGSolve.compute(rowMajorA);
+		//eSolver.setMode(Eigen::CholmodSupernodalLLt);
+		//
+		//eSolver.compute(A);
+		//Check result
+		//if (eSolver.cholmod().status>0) {
+		//	cerr << "something went wrong in Cholesky factorization, use LDLt as fallback this time" << eSolver.cholmod().status << endl;
+		//	eSolver.setMode(Eigen::CholmodLDLt);
+		//	eSolver.compute(A);
+		//}
+		factorizedEigenSolver = true;
+	}
+	// backgroundAction only wants to factorize, no need to solve and copy to cells.
+	if (!factorizeOnly){
+		openblas_set_num_threads(omp_get_max_threads());
+		omp_set_num_threads(omp_get_max_threads());
+		Eigen::setNbThreads(omp_get_max_threads());
+		//cout << "About to solve for x" << endl;
+		//cout << "Example value of b " << eb[20] << endl;
+		//cout << "Example value of A" << A(1,1) << endl;
+		//ex = cg.solve(eb);
+		//ex = cg.solveWithGuess(eb,eguess);
+		//ex = eSolver2.solve(eb);
+		ex = biCGSolve.solve(eb);  //     WithGuess(eb,eguess);
+		//cout << "solved for x" << endl;
+		
+		//ex = biCGSolve.solve(eb);
+		//cout << "copying x back to T_x" << endl;
+		for (int k=0; k<ncols; k++){
+			T_x[k]=ex[k];
+			//eguess[k] = ex[k];	
+		}
+		//eguess = ex;
+		//cout << "done copying back to T_x" << endl;
+		copyLinToCells();
+		//cout << "done copying values to cells" << endl;
+	}
+#else
+	cerr<<"Flow engine not compiled with eigen, nothing computed if useSolver=4"<<endl;
+#endif
+	return 0;
+}
+
+template<class _Tesselation, class FlowType>
+int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::amesosSolve(Real dt)
+{
+#ifdef TRILINOS_LIB
+	if (!isLinearSystemSet || (isLinearSystemSet && reApplyBoundaryConditions()) || !updatedRHS) ncols = setLinearSystem(dt);
+	copyCellsToLin(dt);
+	cout << "Initiating amesos" << endl;
+	
+//	MPI_Init(NULL, NULL);
+	Epetra_MpiComm Comm (MPI_COMM_WORLD);
+//	Epetra_SerialComm Comm;
+	Epetra_Map Map(-1,ncols,0,Comm);
+	Epetra_CrsMatrix amesosA(Copy, Map, ncols);
+	Epetra_Vector amesosb(Map, ncols); 
+	Epetra_Vector amesosx(Map, ncols); // amesosx.PutScalar(0.0);
+	//vector<int> ind(ncols);
+	//Eigen::VectorXi ind(ncols);
+	//ind.setLinSpaced(ncols+1, 0, 1*(ncols-1));
+	//const vector<int> zeros(ncols, 0);
+	//iota(begin(ind), end(ind), 0);
+	//iota(begin(x), end(x), 0);
+	cout << "setting b and x" << endl;
+	for (int k=0;k<ncols;k++){
+		//const int col = k-1
+		amesosb.ReplaceGlobalValues(1, &T_bv[k], &k);
+		const double zero = 0;
+		amesosx.ReplaceGlobalValues(1, &zero, &k);
+	}		
+ 	cout<<"b vector " << amesosb << endl;
+	cout<<"x vector " << amesosx << endl;
+	cout << "Setting A" << endl;
+	cout<<"Number cols" << ncols;
+	//FIXME:PARALELLIZE THIS LOOP? Also dont want to do this every time step...
+	for (int k=0; k<T_nnz; k++){
+		int row = is[k]-1;int col=js[k]-1;  //Real val=vs[k]; 
+		amesosA.InsertGlobalValues(row, 1, &vs[k], &col);
+	}	
+	//EpetraExt::CrsMatrix_Reindex amesosA(Map);
+	amesosA.FillComplete();
+	cout << "A matrix filled" << amesosA << endl;
+	//Epetra_LinearProblem(amesosA,amesosx,amesosb);
+	//Epetra_LinearProblem* Amesos_LinearProblem = new Epetra_LinearProblem;
+	cout << "create linear problem" << endl;
+	Epetra_LinearProblem Amesos_LinearProblem(&amesosA, &amesosx, &amesosb);
+//	Epetra_LinearProblem* Amesos_LinearProblem = new Epetra_LinearProblem;
+//	Amesos_LinearProblem->SetOperator(&amesosA);
+//	Amesos_LinearProblem->SetLHS(&amesosx);
+//	Amesos_LinearProblem->SetRHS(&amesosb);
+	
+	//Amesos_LinearProblem->SetOperator(amesosA);
+	//Amesos_LinearProblem->SetLHS(amesosx);
+	//Amesos_LinearProblem->SetRHS(amesosb);
+	bool solveDirect = false;
+	if (!solveDirect){	
+		AztecOO solver(Amesos_LinearProblem);
+		cout << "condition estimate" << solver.Condest() << endl;
+		solver.SetAztecOption(AZ_precond, AZ_Jacobi);
+		solver.Iterate(200000, 1.0E-6);	
+	}
+
+	if (solveDirect){
+		Amesos_BaseSolver* A_Base;
+		Amesos A_Factory;
+		string SolverType = "Amesos_Klu";
+		A_Base = A_Factory.Create(SolverType, Amesos_LinearProblem);
+		assert(A_Base!=0);
+	
+		// parameterslist
+		Teuchos::ParameterList List;
+		List.set("PrintTiming", true);
+		List.set("PrintStatus", true);
+	
+		//Solver = Factory.Create(Amesos_Parakelete, Problem);
+		bool ierr;
+		ierr = A_Base->SymbolicFactorization();
+		if (ierr >0) cerr << "ERROR! " << ierr << endl;	
+		ierr = A_Base->NumericFactorization();
+		if(ierr>0) cerr << "ERROR! " << ierr << endl;
+		A_Base->Solve();
+		
+	
+		
+	}
+	cout << "Solved pressures " << amesosx << endl;
+	for (int k=0; k<ncols; k++) T_x[k]=amesosx[k];
+	copyLinToCells();
+	//MPI_Finalize();
+//	delete Solver;
+
+//	MPI_Finalize();
+#else
+	cerr<<"Flow engine not compiled with Trilinos, nothing computed if useSolver=5"<<endl;
 #endif
 	return 0;
 }

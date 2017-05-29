@@ -1,6 +1,6 @@
 #include<core/Omega.hpp>
 #include<lib/base/Logging.hpp>
-
+#include <mpi.h>
 #include<signal.h>
 
 #ifdef YADE_DEBUG
@@ -19,7 +19,7 @@
 
 /* Initialize yade, loading given plugins */
 void yadeInitialize(boost::python::list& pp, const std::string& confDir){
-
+	MPI_Init(NULL, NULL);
 	PyEval_InitThreads();
 
 	Omega& O(Omega::instance());
@@ -36,8 +36,10 @@ void yadeInitialize(boost::python::list& pp, const std::string& confDir){
 	#endif
 	vector<string> ppp; for(int i=0; i<boost::python::len(pp); i++) ppp.push_back(boost::python::extract<string>(pp[i]));
 	Omega::instance().loadPlugins(ppp);
+
+
 }
-void yadeFinalize(){ Omega::instance().cleanupTemps(); }
+void yadeFinalize(){ MPI_Finalize(); Omega::instance().cleanupTemps(); }
 
 BOOST_PYTHON_MODULE(boot){
   boost::python::scope().attr("initialize")=&yadeInitialize;

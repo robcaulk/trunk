@@ -11,10 +11,39 @@
 #define EIGENSPARSE_LIB //comment this if CHOLMOD is not available
 // #define TAUCS_LIB //comment this if TAUCS lib is not available, it will disable PARDISO lib as well
 
+
+#ifdef YADE_OPENMP
+  #include <omp.h>
+  // #define GS_OPEN_MP //It should never be defined if Yade is not using openmp
+#endif
+
+#define TRILINOS_LIB
+
+#ifdef TRILINOS_LIB
+//	#include "mpi.h"
+	#include "Epetra_MpiComm.h"
+//	#include "trilinos/teuchos.h"
+	#include "trilinos/Epetra_SerialComm.h"
+	#include "trilinos/Epetra_Map.h"
+	#include "trilinos/Epetra_Vector.h"
+	#include "trilinos/Epetra_MultiVector.h"
+	#include "trilinos/Epetra_CrsMatrix.h"
+	#include "trilinos/Epetra_RowMatrix.h"
+	#include "trilinos/Amesos.h"
+	#include "trilinos/Amesos_BaseSolver.h"
+	#include "trilinos/Amesos_ConfigDefs.h"
+	#include "trilinos/AztecOO.h"
+	#include "AztecOO_config.h"
+	#include <mpi.h>
+	#include "trilinos/EpetraExt_Reindex_CrsMatrix.h"
+//	#include "AmesosClassType.h"
+#endif
+
 #ifdef EIGENSPARSE_LIB
 	#include <Eigen/Sparse>
 	#include <Eigen/SparseCore>
 	#include <Eigen/CholmodSupport>
+	#include <Eigen/IterativeLinearSolvers>
 #endif
 #ifdef TAUCS_LIB
 #define TAUCS_CORE_DOUBLE
@@ -27,6 +56,8 @@ extern "C" {
 #endif
 
 #include "FlowBoundingSphere.hpp"
+using namespace Eigen;
+using namespace Teuchos;
 
 ///_____ Declaration ____
 
@@ -66,10 +97,15 @@ public:
 	#ifdef EIGENSPARSE_LIB
 	//Eigen's sparse matrix and solver
 	Eigen::SparseMatrix<double> A;
+	Eigen::SparseMatrix<double,Eigen::RowMajor> rowMajorA;
 	typedef Eigen::Triplet<double> ETriplet;
 	std::vector<ETriplet> tripletList;//The list of non-zero components in Eigen sparse matrix
 	Eigen::CholmodDecomposition<Eigen::SparseMatrix<double>, Eigen::Lower > eSolver;
+	Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Lower|Upper> cg;
+	Eigen::BiCGSTAB<Eigen::SparseMatrix<double,Eigen::RowMajor>> biCGSolve;
+	Eigen::SimplicialLLT<Eigen::SparseMatrix<double>, Eigen::Lower> eSolver2;
 	bool factorizedEigenSolver;
+	Eigen::VectorXd eguess;
 	void exportMatrix(const char* filename) {ofstream f; f.open(filename); f<<A; f.close();};
 	void exportTriplets(const char* filename) {ofstream f; f.open(filename);
 		for (int k=0; k<A.outerSize(); ++k)
@@ -80,6 +116,28 @@ public:
 	int numSolveThreads;
 	#endif
 
+
+	#ifdef TRILINOS_LIB
+	//Epetra_SerialComm Comm;
+	//int numThreads;
+	//int numGlobElems;
+	//int indexBase;
+	//Epetra_Map Map(int numGlobElems, int numThreads, int indexBase, Epetra_SerialComm Comm);
+	//Epetra_CrsMatrix amesosA(Epetra_DataAccess Copy,Epetra_Map& Map, const int* NumRowEntries);
+	//Epetra_RowMatrix amesosA;
+	//Epetra_Vector amesosx(Epetra_Map Map);
+	//Epetra_Vector amesosb(Epetra_Map Map);
+
+	//Epetra_SerialComm Comm;
+	//int numThreads;
+	//int numGlobElems;
+	//int indexBase;
+	//Epetra_Map Map();
+	//Epetra_CrsMatrix amesosA();
+	//Epetra_Vector amesosx();
+	//Epetra_Vector amesosb();
+	#endif
+
 	#ifdef TAUCS_LIB
 	taucs_ccs_matrix SystemMatrix;
 	taucs_ccs_matrix* T_A;
@@ -87,7 +145,9 @@ public:
 	void* F;//The taucs factor
 	#endif
 
-	
+	vector<int> is;
+	vector<int> js;
+	vector<double> vs;
 	int T_nnz;
 	int ncols;
 	int T_size;
@@ -155,6 +215,8 @@ public:
 	int pardisoSolveTest();
 	int pardisoSolve(Real dt);
 	int eigenSolve(Real dt);
+	int conjugateGradientSolve(Real dt);
+	int amesosSolve(Real dt);
 	
 	void copyGsToCells();
 	void copyCellsToGs(Real dt);
@@ -179,6 +241,12 @@ public:
 		case 3:
 			eigenSolve(dt);
 			break;
+		case 4: 
+			conjugateGradientSolve(dt);
+			break;
+		case 5: 
+			amesosSolve(dt);
+			break;		
 		}
 		computedOnce=true;
 	}
