@@ -302,6 +302,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
 		#endif
 		#ifdef TRILINOS_LIB
 		} else if (useSolver==5){
+			
 			//int fuckAmesos = true;			
 			//Epetra_SerialComm Comm;
 			// Construct map that puts same number of equations on each processor
@@ -676,12 +677,19 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::amesosSolve(Real dt)
 	if (!isLinearSystemSet || (isLinearSystemSet && reApplyBoundaryConditions()) || !updatedRHS) ncols = setLinearSystem(dt);
 	copyCellsToLin(dt);
 	cout << "Initiating amesos" << endl;
-	
+	omp_set_num_threads(omp_get_max_threads());
 //	MPI_Init(NULL, NULL);
 	Epetra_MpiComm Comm (MPI_COMM_WORLD);
+	int nprocs;
+	MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+	cout << "Number of processors" << nprocs << endl;
+	
 //	Epetra_SerialComm Comm;
-	Epetra_Map Map(-1,ncols,0,Comm);
-	Epetra_CrsMatrix amesosA(Copy, Map, ncols);
+//	int numCores = omp_get_max_threads();
+	//int numRowsPerCore = ncols/omp_get_max_threads();
+//	Epetra_Map Map(-1,numRowsPerCore,0,Comm);
+	Epetra_Map Map(ncols, 0, Comm);
+	Epetra_CrsMatrix amesosA(Copy, Map, 4);
 	Epetra_Vector amesosb(Map, ncols); 
 	Epetra_Vector amesosx(Map, ncols); // amesosx.PutScalar(0.0);
 	//vector<int> ind(ncols);
@@ -692,10 +700,10 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::amesosSolve(Real dt)
 	//iota(begin(x), end(x), 0);
 	cout << "setting b and x" << endl;
 	for (int k=0;k<ncols;k++){
-		//const int col = k-1
-		amesosb.ReplaceGlobalValues(1, &T_bv[k], &k);
+		const int col = k;
+		amesosb.ReplaceGlobalValues(1, &T_bv[k], &col);
 		const double zero = 0;
-		amesosx.ReplaceGlobalValues(1, &zero, &k);
+		amesosx.ReplaceGlobalValues(1, &zero, &col);
 	}		
  	cout<<"b vector " << amesosb << endl;
 	cout<<"x vector " << amesosx << endl;
@@ -721,7 +729,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::amesosSolve(Real dt)
 	//Amesos_LinearProblem->SetOperator(amesosA);
 	//Amesos_LinearProblem->SetLHS(amesosx);
 	//Amesos_LinearProblem->SetRHS(amesosb);
-	bool solveDirect = false;
+	bool solveDirect = true;
 	if (!solveDirect){	
 		AztecOO solver(Amesos_LinearProblem);
 		cout << "condition estimate" << solver.Condest() << endl;
@@ -754,6 +762,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::amesosSolve(Real dt)
 	}
 	cout << "Solved pressures " << amesosx << endl;
 	for (int k=0; k<ncols; k++) T_x[k]=amesosx[k];
+	cout << "Check the copy over " << T_x[10] << " " << amesosx[10] << endl;
 	copyLinToCells();
 	//MPI_Finalize();
 //	delete Solver;

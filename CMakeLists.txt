@@ -45,7 +45,16 @@ INCLUDE(FindPythonModule)
 INCLUDE(GNUInstallDirs)
 INCLUDE(FindTrilinos)
 
+FIND_PACKAGE(MPI REQUIRED)
+IF (MPI_FOUND)
+	include_directories(${MPI_INCLUDE_PATH})	
+	MESSAGE(STATUS "FOUND MPI")
+ELSE(MPI_FOUND)
+	MESSAGE(STATUS "MPI NOT FOUND")
+ENDIF(MPI_FOUND)
 
+
+#ADD_EXECUTABLE(yade ${CMAKE_SOURCE_DIR})
 INCLUDE_DIRECTORIES (${CMAKE_SOURCE_DIR})
 
 #===========================================================
@@ -74,7 +83,8 @@ ELSE()
   ENDIF()
 ENDIF()
 
-SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -fPIC -O2 --param=ssp-buffer-size=4 -Wformat -Wformat-security -Werror=format-security -Wall -std=c++11")
+
+SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -openmp -fPIC -O2 --param=ssp-buffer-size=4 -Wformat -Wformat-security -Werror=format-security -Wall -std=c++11")
 
 IF (DEBUG)
   SET(CMAKE_VERBOSE_MAKEFILE 1)
@@ -557,9 +567,10 @@ find_python_module(Tkinter REQUIRED)
 
 ADD_LIBRARY(boot SHARED ${CMAKE_CURRENT_SOURCE_DIR}/core/main/pyboot.cpp)
 SET_TARGET_PROPERTIES(boot PROPERTIES PREFIX "" LINK_FLAGS "-Wl,--as-needed" )
-TARGET_LINK_LIBRARIES(yade ${Boost_LIBRARIES} ${PYTHON_LIBRARIES} ${LINKLIBS} -lrt)
+TARGET_LINK_LIBRARIES(yade ${Boost_LIBRARIES} ${PYTHON_LIBRARIES} ${LINKLIBS} ${MPI_LIBRARIES} -lrt)
 SET_TARGET_PROPERTIES(yade  PROPERTIES LINK_FLAGS "-Wl,--as-needed" )
 TARGET_LINK_LIBRARIES(boot yade)
+#TARGET_LINK_LIBRARIES(yade ${MPI_LIBRARIES})
 
 IF(ENABLE_VTK)
   IF(${VTK_MAJOR_VERSION} GREATER 5)
