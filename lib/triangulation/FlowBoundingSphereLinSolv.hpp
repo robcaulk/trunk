@@ -133,7 +133,10 @@ public:
 	//int numGlobElems;
 	//int indexBase;
 	//Epetra_Map Map();
-	//Epetra_CrsMatrix amesosA(;
+	Epetra_MpiComm* Comm;
+	//Epetra_SerialComm* Comm;
+	Epetra_Map* Map;
+	Epetra_CrsMatrix* amesosA;
 	//Epetra_Vector amesosx();
 	//Epetra_Vector amesosb();
 	#endif

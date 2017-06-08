@@ -302,38 +302,41 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
 		#endif
 		#ifdef TRILINOS_LIB
 		} else if (useSolver==5){
+
+
+
+
+	omp_set_num_threads(omp_get_max_threads());
+//	MPI_Init(NULL, NULL);
+	Comm = new Epetra_MpiComm(MPI_COMM_WORLD);
+	//Comm = new Epetra_SerialComm;
+
+	//int nprocs;
+	//MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+	//cout << "Number of processors" << nprocs << endl;
+	
+//	Epetra_SerialComm Comm;
+//	int numCores = omp_get_max_threads();
+	//int numRowsPerCore = ncols/omp_get_max_threads();
+//	Epetra_Map Map(-1,numRowsPerCore,0,Comm);
+
+	Map = new Epetra_Map(ncols, 0, *Comm);
+	amesosA = new Epetra_CrsMatrix(Copy, *Map, 4);
+	
+	cout << "Setting A" << endl;
+	cout<<"Number cols" << ncols;
+	//FIXME:PARALELLIZE THIS LOOP? Also dont want to do this every time step...
+	for (int k=0; k<T_nnz; k++){
+		int row = is[k]-1;int col=js[k]-1;  //Real val=vs[k]; 
+		amesosA->InsertGlobalValues(row, 1, &vs[k], &col);
+	}	
+
+
+	amesosA->FillComplete();
+	cout << "A matrix filled" << amesosA << endl;
 			
-			//int fuckAmesos = true;			
-			//Epetra_SerialComm Comm;
-			// Construct map that puts same number of equations on each processor
-			//Epetra_Map newMap(-1, ncols, 0, Comm);
-			//Epetra_Map Map(-1,ncols,0,Comm);
-			//int NumGlobalElements = Map.NumGlobalElements();
-
-			//create Epetra_Matrix
-			//amesosA.ReplaceRowMap(newMap);
-			//Epetra_CrsMatrix amesosA(Copy, Map, ncols);
-
-			//Add rows one-at-a-time
-			//double negOne = -1.0;
-			//double posTwo = 2.0;
-			//for (int i=0; i<ncols; i++){
-			//	int GlobalRow = A.GRID(i); int RowLess1 = GlobalRow-1; intRowPlus1 = GlobalRow+1;
-			//	if (RowLess1!=-1) A.InsertGlobalValues(GlobalRow, 1, &negOne, &RowLess1);
-			//	if (RowPlus1!=NumGlobalElements) A.InsertGlobalValues(GlobalRow, 1, &negOne, &RowPlus1);
-			//	A.InsertGlobalValues(GlobalRow, 1, &posTwo, &GlobalRow);
-
-			//for (int k=0; k<T_nnz; k++){
-			//	int row = is[k];int col=js[k];Real val=vs[k]; 
-			//	amesosA.InsertGlobalValues(row, 1, &val, &col);
-			//}
 			
-			// Finish up 
-			//amesosA.FillComplete();
-			//amesosx(Map);
-			//amesosb(Map);
-			//amesosx.ReplaceMap(newMap);
-			//amesosb.ReplaceMap(newMap);
+
 		#endif
 		}
 
@@ -677,27 +680,22 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::amesosSolve(Real dt)
 	if (!isLinearSystemSet || (isLinearSystemSet && reApplyBoundaryConditions()) || !updatedRHS) ncols = setLinearSystem(dt);
 	copyCellsToLin(dt);
 	cout << "Initiating amesos" << endl;
-	omp_set_num_threads(omp_get_max_threads());
+	//omp_set_num_threads(omp_get_max_threads());
 //	MPI_Init(NULL, NULL);
-	Epetra_MpiComm Comm (MPI_COMM_WORLD);
-	int nprocs;
-	MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-	cout << "Number of processors" << nprocs << endl;
+//	Epetra_MpiComm CommLocal (MPI_COMM_WORLD);
+
 	
 //	Epetra_SerialComm Comm;
-//	int numCores = omp_get_max_threads();
-	//int numRowsPerCore = ncols/omp_get_max_threads();
-//	Epetra_Map Map(-1,numRowsPerCore,0,Comm);
-	Epetra_Map Map(ncols, 0, Comm);
-	Epetra_CrsMatrix amesosA(Copy, Map, 4);
-	Epetra_Vector amesosb(Map, ncols); 
-	Epetra_Vector amesosx(Map, ncols); // amesosx.PutScalar(0.0);
-	//vector<int> ind(ncols);
-	//Eigen::VectorXi ind(ncols);
-	//ind.setLinSpaced(ncols+1, 0, 1*(ncols-1));
-	//const vector<int> zeros(ncols, 0);
-	//iota(begin(ind), end(ind), 0);
-	//iota(begin(x), end(x), 0);
+
+	//Epetra_Map MapLocal(-1,ncols,0,CommLocal);
+
+	//Epetra_CrsMatrix amesosALocal(Copy, MapLocal, 4);
+	//Epetra_Vector amesosb(MapLocal, ncols); 
+	//Epetra_Vector amesosx(MapLocal, ncols);
+
+	Epetra_Vector amesosb(*Map, ncols); 
+	Epetra_Vector amesosx(*Map, ncols); // amesosx.PutScalar(0.0);
+
 	cout << "setting b and x" << endl;
 	for (int k=0;k<ncols;k++){
 		const int col = k;
@@ -710,31 +708,29 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::amesosSolve(Real dt)
 	cout << "Setting A" << endl;
 	cout<<"Number cols" << ncols;
 	//FIXME:PARALELLIZE THIS LOOP? Also dont want to do this every time step...
-	for (int k=0; k<T_nnz; k++){
-		int row = is[k]-1;int col=js[k]-1;  //Real val=vs[k]; 
-		amesosA.InsertGlobalValues(row, 1, &vs[k], &col);
-	}	
-	//EpetraExt::CrsMatrix_Reindex amesosA(Map);
-	amesosA.FillComplete();
-	cout << "A matrix filled" << amesosA << endl;
-	//Epetra_LinearProblem(amesosA,amesosx,amesosb);
-	//Epetra_LinearProblem* Amesos_LinearProblem = new Epetra_LinearProblem;
+	//for (int k=0; k<T_nnz; k++){
+	//	int row = is[k]-1;int col=js[k]-1;  //Real val=vs[k]; 
+	//	amesosALocal.InsertGlobalValues(row, 1, &vs[k], &col);
+	//}	
+
+
+//	amesosALocal.FillComplete();
+	//cout << "A matrix filled" << amesosA << endl;
+
 	cout << "create linear problem" << endl;
-	Epetra_LinearProblem Amesos_LinearProblem(&amesosA, &amesosx, &amesosb);
-//	Epetra_LinearProblem* Amesos_LinearProblem = new Epetra_LinearProblem;
-//	Amesos_LinearProblem->SetOperator(&amesosA);
-//	Amesos_LinearProblem->SetLHS(&amesosx);
-//	Amesos_LinearProblem->SetRHS(&amesosb);
 	
-	//Amesos_LinearProblem->SetOperator(amesosA);
-	//Amesos_LinearProblem->SetLHS(amesosx);
-	//Amesos_LinearProblem->SetRHS(amesosb);
-	bool solveDirect = true;
+	Epetra_LinearProblem Amesos_LinearProblem(amesosA, &amesosx, &amesosb);
+	//Epetra_LinearProblem Amesos_LinearProblem(&amesosALocal, &amesosx, &amesosb);
+//	Epetra_LinearProblem* Amesos_LinearProblem = new Epetra_LinearProblem;
+
+	bool solveDirect = false;
 	if (!solveDirect){	
-		AztecOO solver(Amesos_LinearProblem);
-		cout << "condition estimate" << solver.Condest() << endl;
-		solver.SetAztecOption(AZ_precond, AZ_Jacobi);
-		solver.Iterate(200000, 1.0E-6);	
+		AztecOO A_Base(Amesos_LinearProblem);
+		//cout << "condition estimate" << A_base.Condest() << endl;
+		A_Base.SetAztecOption(AZ_precond, AZ_none);
+		A_Base.SetAztecOption(AZ_solver, AZ_bicgstab);
+		A_Base.Iterate(200000, 1.0E-6);	
+		//delete &A_Base;
 	}
 
 	if (solveDirect){
@@ -756,6 +752,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::amesosSolve(Real dt)
 		ierr = A_Base->NumericFactorization();
 		if(ierr>0) cerr << "ERROR! " << ierr << endl;
 		A_Base->Solve();
+		//delete A_Base;
 		
 	
 		
@@ -765,7 +762,9 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::amesosSolve(Real dt)
 	cout << "Check the copy over " << T_x[10] << " " << amesosx[10] << endl;
 	copyLinToCells();
 	//MPI_Finalize();
-//	delete Solver;
+	
+	//delete &amesosb;
+	//delete &amesosx;
 
 //	MPI_Finalize();
 #else

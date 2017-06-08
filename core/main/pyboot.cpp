@@ -19,9 +19,9 @@
 
 /* Initialize yade, loading given plugins */
 void yadeInitialize(boost::python::list& pp, const std::string& confDir){
-	MPI_Init(NULL, NULL);
-	PyEval_InitThreads();
 
+	PyEval_InitThreads();
+	MPI_Init(NULL, NULL);
 	Omega& O(Omega::instance());
 	O.init();
 	O.origArgv=NULL; O.origArgc=0; // not needed, anyway
