@@ -92,7 +92,7 @@ class Ip2_JCFpmMat_JCFpmMat_JCFpmPhys: public IPhysFunctor{
 		void distributeStiffnesses(shared_ptr<JCFpmPhys> contactPhysics);
 		void distributeStrengthsNormal(shared_ptr<JCFpmPhys> contactPhysics,const shared_ptr<JCFpmMat>& yade1,const shared_ptr<JCFpmMat>& yade2);
 		void distributeStrengthsWeibull(shared_ptr<JCFpmPhys> contactPhysics,const shared_ptr<JCFpmMat>& yade1,const shared_ptr<JCFpmMat>& yade2);
-		void distributeCrossSectionsWeibull(shared_ptr<JCFpmPhys> contactPhysics);
+		void distributeCrossSectionsWeibull(shared_ptr<JCFpmPhys> contactPhysics, Real R1, Real R2);
 		FUNCTOR2D(JCFpmMat,JCFpmMat);
 		DECLARE_LOGGER;
 	
