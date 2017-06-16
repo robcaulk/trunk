@@ -253,6 +253,7 @@ class TemplateFlowEngine_@TEMPLATE_FLOW_NAME@ : public PartialEngine
 		((double, wallThickness,0,,"Walls thickness"))
 		((double,pZero,0,,"The value used for initializing pore pressure. It is useless for incompressible fluid, but important for compressible model."))
 		((double,tolerance,1e-06,,"Gauss-Seidel tolerance"))
+		((bool,solveDirect,true,,"Amesos direct or Aztec iterative flow solver choice (must use usesolver=5)"))
 		((double,relax,1.9,,"Gauss-Seidel relaxation"))
 		((bool, updateTriangulation, 0,,"If true the medium is retriangulated. Can be switched on to force retriangulation after some events (else it will be true periodicaly based on :yref:`FlowEngine::defTolerance` and :yref:`FlowEngine::meshUpdateInterval`. Of course, it costs CPU time. Note that the new triangulation will start to be effectively used only after one iteration (i.e. O.run(2) gives a result with the new one, O.run(1) does not)."))
 		((int,meshUpdateInterval,1000,,"Maximum number of timesteps between re-triangulation events. See also :yref:`FlowEngine::defTolerance`."))

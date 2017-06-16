@@ -54,6 +54,8 @@ extern  "C" int F77_FUNC(pardiso)
      int *, double *, double *, int *, double *);
 #endif
 
+extern Epetra_MpiComm* Comm;
+
 #ifdef XVIEW
 Vue3D Vue1;
 #endif
@@ -67,6 +69,7 @@ FlowBoundingSphereLinSolv<_Tesselation,FlowType>::~FlowBoundingSphereLinSolv()
 template<class _Tesselation, class FlowType>
 FlowBoundingSphereLinSolv<_Tesselation,FlowType>::FlowBoundingSphereLinSolv(): FlowType() {
 	useSolver=0;
+	solveDirect = true;
 	isLinearSystemSet=0;
 	isFullLinearSystemGSSet=0;
 	areCellsOrdered=0;//true when orderedCells is filled, turn it false after retriangulation
@@ -722,14 +725,18 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::amesosSolve(Real dt)
 	Epetra_LinearProblem Amesos_LinearProblem(amesosA, &amesosx, &amesosb);
 	//Epetra_LinearProblem Amesos_LinearProblem(&amesosALocal, &amesosx, &amesosb);
 //	Epetra_LinearProblem* Amesos_LinearProblem = new Epetra_LinearProblem;
-
-	bool solveDirect = false;
+	cout << "linear problem created" << endl;
+	//bool solveDirect = solveDirect;
 	if (!solveDirect){	
 		AztecOO A_Base(Amesos_LinearProblem);
+		cout << "created the aztec solver" << endl;
 		//cout << "condition estimate" << A_base.Condest() << endl;
 		A_Base.SetAztecOption(AZ_precond, AZ_none);
 		A_Base.SetAztecOption(AZ_solver, AZ_bicgstab);
+		cout << " set options for aztec solver" << endl;
 		A_Base.Iterate(200000, 1.0E-6);	
+		cout << "matrix solved" <<endl;
+			
 		//delete &A_Base;
 	}
 
@@ -738,6 +745,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::amesosSolve(Real dt)
 		Amesos A_Factory;
 		string SolverType = "Amesos_Klu";
 		A_Base = A_Factory.Create(SolverType, Amesos_LinearProblem);
+		cout << "created the amesos solver" << endl;
 		assert(A_Base!=0);
 	
 		// parameterslist
@@ -749,9 +757,12 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::amesosSolve(Real dt)
 		bool ierr;
 		ierr = A_Base->SymbolicFactorization();
 		if (ierr >0) cerr << "ERROR! " << ierr << endl;	
+		cout << "factorized amesos" << endl;
 		ierr = A_Base->NumericFactorization();
 		if(ierr>0) cerr << "ERROR! " << ierr << endl;
+		cout << "numeric factorized amesos" << endl;
 		A_Base->Solve();
+		cout << "solved amesos" << endl;
 		//delete A_Base;
 		
 	

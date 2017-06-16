@@ -507,6 +507,7 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::distributeCrossSectionsWeibull(shared_ptr<
 	//Real interactingRadius = scaleFactor*weibullDistribution(e2)/2.;
 	Real correction = weibullDistribution(e2);
 	//cout << "correction " << correction << " min R1 R2 "<< min(R1, R2) << endl;
+	//cout << "put a dick in my mouth" << endl;
 	Real interactingRadius = correction*min(R1, R2);  // correcting radius to account for grain interactions
 	contactPhysics->crossSection = Mathr::PI*pow(interactingRadius,2);
 }

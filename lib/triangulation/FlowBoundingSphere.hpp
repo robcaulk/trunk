@@ -37,6 +37,7 @@ class FlowBoundingSphere : public Network<_Tesselation>
 
 		bool slipBoundary;
 		double tolerance;
+		bool solveDirect;
 		double relax;
 		double ks; //Hydraulic Conductivity
 		bool clampKValues, meanKStat, distanceCorrection;

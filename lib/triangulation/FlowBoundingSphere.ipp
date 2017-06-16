@@ -59,6 +59,7 @@ FlowBoundingSphere<Tesselation>::FlowBoundingSphere()
 	vtkInfiniteVertices=0, vtkInfiniteCells=0;
 	viscosity = 1;
 	fluidBulkModulus = 0;
+	solveDirect = true;
 	tessBasedForce = true;
 	for (int i=0;i<6;i++) boundsIds[i] = 0;
 	minPermLength=1e-6;// multiplier applied on throat radius to define a minimal throat length (escaping coincident points)
@@ -1182,6 +1183,14 @@ void FlowBoundingSphere<Tesselation>::saveVtk(const char* folder)
 	for (FiniteCellsIterator cell = Tri.finite_cells_begin(); cell != Tri.finite_cells_end(); ++cell) {
 		bool isDrawable = cell->info().isReal() && cell->vertex(0)->info().isReal() && cell->vertex(1)->info().isReal() && cell->vertex(2)->info().isReal()  && cell->vertex(3)->info().isReal();
 		if (isDrawable){vtkfile.write_data(cell->info().p());}
+	}
+	vtkfile.end_data();}
+
+	if (1){
+	vtkfile.begin_data("volume",CELL_DATA,SCALARS,FLOAT);
+	for (FiniteCellsIterator cell = Tri.finite_cells_begin(); cell != Tri.finite_cells_end(); ++cell) {
+		bool isDrawable = cell->info().isReal() && cell->vertex(0)->info().isReal() && cell->vertex(1)->info().isReal() && cell->vertex(2)->info().isReal()  && cell->vertex(3)->info().isReal();
+		if (isDrawable){vtkfile.write_data(cell->info().volume());}
 	}
 	vtkfile.end_data();}
 

@@ -2,6 +2,9 @@
 #include<lib/base/Logging.hpp>
 #include <mpi.h>
 #include<signal.h>
+#include "trilinos/Epetra_MpiComm.h"
+
+
 
 #ifdef YADE_DEBUG
 	void crashHandler(int sig){
@@ -22,6 +25,7 @@ void yadeInitialize(boost::python::list& pp, const std::string& confDir){
 
 	PyEval_InitThreads();
 	MPI_Init(NULL, NULL);
+	
 	Omega& O(Omega::instance());
 	O.init();
 	O.origArgv=NULL; O.origArgc=0; // not needed, anyway

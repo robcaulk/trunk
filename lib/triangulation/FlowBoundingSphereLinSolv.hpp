@@ -77,6 +77,7 @@ public:
 	using FlowType::yMaxId;
 	using FlowType::debugOut;
 	using FlowType::tolerance;
+	using FlowType::solveDirect;
 	using FlowType::relax;
 	using FlowType::fluidBulkModulus;
 	using FlowType::reApplyBoundaryConditions;
