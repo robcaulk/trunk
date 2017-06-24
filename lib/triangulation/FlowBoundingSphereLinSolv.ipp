@@ -54,7 +54,7 @@ extern  "C" int F77_FUNC(pardiso)
      int *, double *, double *, int *, double *);
 #endif
 
-extern Epetra_MpiComm* Comm;
+// extern Epetra_MpiComm* Comm;
 
 #ifdef XVIEW
 Vue3D Vue1;
