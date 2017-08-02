@@ -68,10 +68,12 @@ FlowBoundingSphereLinSolv<_Tesselation,FlowType>::~FlowBoundingSphereLinSolv()
 	#ifdef TAUCS_LIB
 	if (Fccs) taucs_ccs_free(Fccs);
 	#endif
-	#ifdef EIGENSPARSE_LIB
-	if (useSolver==4){
-		cholmod_l_finish(&com);
+	#ifdef CHOLMOD_LIB
+	if (useSolver == 4){
 		cholmod_l_free_sparse(&Achol, &com);
+		cholmod_l_free_factor(&L, &com);
+		cholmod_l_finish(&com);
+		cout << "Achol memory freed and cholmod finished" <<endl;
 	}
 	#endif
 }
@@ -96,12 +98,12 @@ FlowBoundingSphereLinSolv<_Tesselation,FlowType>::FlowBoundingSphereLinSolv(): F
 	factorizeOnly = false;
 	numFactorizeThreads=omp_get_max_threads();
 	numSolveThreads=omp_get_max_threads();
-	if (useSolver==4){
-		cholmod_l_start(&com);
-		com.useGPU=1; //useGPU;
-		com.supernodal = CHOLMOD_AUTO; //CHOLMOD_SUPERNODAL;
-	}
 	Eigen::initParallel();
+	#endif	
+	#ifdef CHOLMOD_LIB
+	cholmod_l_start(&com);
+	com.useGPU=1; //useGPU;
+	com.supernodal = CHOLMOD_AUTO; //CHOLMOD_SUPERNODAL;
 	#endif
 }
 
@@ -301,17 +303,17 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
 			const size_t ncol = ncols;
 			//int T_stype = CHOLMOD_STYPE_UPPER_TRIANGLE;
 			//int T_xtype = CHOLMOD_REAL;		
-			cholmod_triplet* T = cholmod_l_allocate_triplet(ncol,ncol, nnz, 1, CHOLMOD_REAL, &com);		
-			cout << "cholmod triplets matrix allocated" << endl;
+			cholmod_triplet* T = cholmod_l_allocate_triplet(ncols,ncols, T_nnz, 1, CHOLMOD_REAL, &com);		
+			//cout << "cholmod triplets matrix allocated" << endl;
 			// set all the values for the cholmod triplet matrix
 			for(int k=0;k<T_nnz;k++){
 				add_T_entry(T,is[k]-1, js[k]-1, vs[k]);  // zero based?? Maybe incorrect		
 			}
 			cholmod_l_print_triplet(T, "triplet", &com);
-			cout << "cholmod triplets set and printed" << endl;
+			//cout << "cholmod triplets set and printed" << endl;
 			// convert triplet to sparse representation
 			Achol = cholmod_l_triplet_to_sparse(T, T->nnz, &com);
-			cout << "cholmod sparse matrix created" << endl;
+			//cout << "cholmod sparse matrix created" << endl;
 			cholmod_l_print_sparse(Achol, "Achol", &com);
 			cholmod_l_free_triplet(&T, &com);
 
@@ -634,8 +636,10 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::eigenSolve(Real dt)
 	Eigen::VectorXd eb(ncols); Eigen::VectorXd ex(ncols);
 	for (int k=0; k<ncols; k++) eb[k]=T_bv[k];
 	if (!factorizedEigenSolver) {
+		clock_t t;
+		t = clock();
 		eSolver.setMode(Eigen::CholmodSupernodalLLt);
-		//openblas_set_num_threads(numFactorizeThreads);
+		openblas_set_num_threads(omp_get_max_threads());
 		eSolver.compute(A);
 		//Check result
 		if (eSolver.cholmod().status>0) {
@@ -643,13 +647,19 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::eigenSolve(Real dt)
 			eSolver.setMode(Eigen::CholmodLDLt);
 			eSolver.compute(A);
 		}
+		t = clock() -t;
+		cout << "Eigen Time to factorize CPU " << ((float)t)/CLOCKS_PER_SEC << endl;
 		factorizedEigenSolver = true;
 	}
 	// backgroundAction only wants to factorize, no need to solve and copy to cells.
 	if (!factorizeOnly){
-		//openblas_set_num_threads(numSolveThreads);
+		//clock_t t;
+		//t = clock();
+		openblas_set_num_threads(omp_get_max_threads());
 		ex = eSolver.solve(eb);
 		for (int k=0; k<ncols; k++) T_x[k]=ex[k];
+		//t = clock() -t;
+		//cout << "Eigen Time to solve and copy to T_x " << ((float)t)/CLOCKS_PER_SEC << endl;
 		copyLinToCells();
 	}
 #else
@@ -677,21 +687,25 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::cholmodSolve(Real dt)
 	copyCellsToLin(dt);
 	
 	cholmod_dense* B = cholmod_l_zeros(ncols, 1, Achol->xtype, &com);
-	cout << "about to assign B->x " << endl;
+	//cout << "about to assign B->x " << endl;
 	double* B_x =(double *) B->x;
 	//double* B_x = (double*) B->x;
-	cout << "B->x assigned " << endl;
+	//cout << "B->x assigned " << endl;
 	//cholmod_factor* L = cholmod_analyze(Achol, &com);
-	cout <<"A factored" << endl;
+	//cout <<"A factored" << endl;
 	for (int k=0; k<ncols; k++) B_x[k]=T_bv[k];  //   B_x[k]=T_bv[k]; ((double*)B->x)
 	//cout << "B_x is " << B_x << endl;
 	
-	if (!factorizedEigenSolver) { 
+	if (!factorizedEigenSolver) {
+		clock_t t;
+		t = clock();
+		openblas_set_num_threads(numFactorizeThreads); 
 		L = cholmod_l_analyze(Achol, &com);
 		//cholmod_change_factor(CHOLMOD_REAL,0, 1, 0, 0,L, &com);
 		cholmod_l_factorize(Achol, L, &com);
-		
-		cout << "Achol factorized" << endl;
+		t = clock() - t;
+		cout << "CHOLMOD Time to factorize on GPU " << ((float)t)/CLOCKS_PER_SEC << endl;
+		//cout << "Achol factorized" << endl;
 
 		// check the properties of factor
 		//assert(flag == 1);
@@ -703,23 +717,28 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::cholmodSolve(Real dt)
 	}
 	
 	if (!factorizeOnly){
-		cout<<"before solve" <<endl;
-		cout<<"is L supernodal? " << L->is_super << endl;
+		//clock_t t;
+		//t = clock();
+		//cout<<"is L supernodal? " << L->is_super << endl;
+		openblas_set_num_threads(numSolveThreads);
 		cholmod_dense* ex = cholmod_l_solve(CHOLMOD_A, L, B, &com);
+		
 		//cout <<"ex is " << ex << endl;
-		cout << "ex solved" << endl;
+		//cout << "ex solved" << endl;
 		double* e_x =(double *) ex->x;
-		cout << "e_x assigned" << endl;   //((double*)ex->x)[100]
+		//cout << "e_x assigned" << endl;   //((double*)ex->x)[100]
 		for (int k=0; k<ncols; k++){
 			T_x[k] = e_x[k]; //((double*)ex->x)[k];    //
 			//cout << "T_x[k] " << T_x[k] << " e_x[k] " << e_x[k] << endl;
 		}
-		cout << "ex values copied over to T_x" << endl;
+		//t = clock()-t;
+		//cout << "CHOLMOD Time to solve and copy to T_x " << ((float)t)/CLOCKS_PER_SEC << endl;		
+		//cout << "ex values copied over to T_x" << endl;
 		copyLinToCells();
 		cholmod_l_free_dense(&ex, &com);
 	}
 	cholmod_l_free_dense(&B, &com);
-	cout << "memory freed (B)" << endl;
+	//cout << "memory freed (B)" << endl;
 #else
 	cerr<<"Flow engine not compiled with eigen, nothing computed if useSolver=3"<<endl;
 #endif

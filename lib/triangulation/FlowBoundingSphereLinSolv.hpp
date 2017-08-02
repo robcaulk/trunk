@@ -11,6 +11,8 @@
 #define EIGENSPARSE_LIB //comment this if CHOLMOD is not available
 // #define TAUCS_LIB //comment this if TAUCS lib is not available, it will disable PARDISO lib as well
 
+#define CHOLMOD_LIB
+
 #ifdef EIGENSPARSE_LIB
 	#include <Eigen/Sparse>
 	#include <Eigen/SparseCore>
@@ -23,6 +25,7 @@
 #include <complex> //THIS ONE MUST ABSOLUTELY BE INCLUDED BEFORE TAUCS.H!
 #include <stdlib.h>
 #include <float.h>
+#include <time.h>
 extern "C" {
 #include "taucs.h"
 }
@@ -83,7 +86,9 @@ public:
 	int numFactorizeThreads;
 	int numSolveThreads;
 	Eigen::VectorXd eguess;
+	#endif
 
+	#ifdef CHOLMOD_LIB
 	cholmod_factor* L;
 	
 	cholmod_sparse* Achol;
@@ -97,6 +102,7 @@ public:
 		T->nnz++;
 	}
 	#endif
+	
 
 	#ifdef TAUCS_LIB
 	taucs_ccs_matrix SystemMatrix;

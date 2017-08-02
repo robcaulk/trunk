@@ -39,9 +39,9 @@ template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT 
 void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,solverT>::action()
 {
        if ( !isActivated ) return;
-       	cout<<"Start action " <<endl;
+       //	cout<<"Start action " <<endl;
 	timingDeltas->start();
-	cout << "Set Positions Buffer" << endl;
+	//cout << "Set Positions Buffer" << endl;
 	setPositionsBuffer(true);
 	timingDeltas->checkpoint ( "Position buffer" );
         if (first) {
@@ -56,7 +56,7 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 	#endif
         timingDeltas->checkpoint ( "Triangulating" );
 	updateVolumes ( *solver );
-	cout<<"update volumes early" <<endl;
+	//cout<<"update volumes early" <<endl;
         timingDeltas->checkpoint ( "Update_Volumes" );
 	
         epsVolCumulative += epsVolMax;
@@ -84,15 +84,15 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 	if (pressureForce){
 		solver->gaussSeidel(scene->dt);
 		timingDeltas->checkpoint ( "Gauss-Seidel (includes matrix construct and factorization in single-thread mode)" );
-		solver->computeFacetForcesWithCache();
-		cout<<"Finished computing facet forces" << endl;}
+		solver->computeFacetForcesWithCache();}
+		//cout<<"Finished computing facet forces" << endl;
         timingDeltas->checkpoint ( "compute_Forces" );
         ///Application of vicscous forces
         scene->forces.sync();
-	cout << "Forces Synced" << endl;
+	//cout << "Forces Synced" << endl;
 	timingDeltas->checkpoint ( "forces.sync()" );
 	computeViscousForces ( *solver );
-	cout << "Viscous forces computed" << endl;
+	//cout << "Viscous forces computed" << endl;
 	timingDeltas->checkpoint ( "viscous forces" );
 	Vector3r force;
 	Vector3r torque;
@@ -114,7 +114,7 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 			scene->forces.addForce ( vId, force);
 			scene->forces.addTorque ( vId, torque);}
         }
-	cout << "Forces added to simulation" << endl;
+	//cout << "Forces added to simulation" << endl;
         ///End compute flow and forces
         timingDeltas->checkpoint ( "Applying Forces" );
 	#ifdef LINSOLV
@@ -167,11 +167,11 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 	 {
 	        if (updateTriangulation && !first) {
 			buildTriangulation (pZero, *solver);
-			cout << "Triangulation built" << endl;
+			//cout << "Triangulation built" << endl;
 			initializeVolumes(*solver);
-			cout << "Volumes initialized" << endl;
+			//cout << "Volumes initialized" << endl;
 			computeViscousForces(*solver);
-			cout << "Viscous forces computed" << endl;
+			//cout << "Viscous forces computed" << endl;
                		updateTriangulation = false;
 			epsVolCumulative=0;
 			retriangulationLastIter=0;
