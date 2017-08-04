@@ -60,6 +60,7 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	}
 	
 	phys->crackJointAperture = D<0? -D : 0.; // for DFNFlow
+	phys->separation = D; // track the separation between particles
 
 	/* Determination of interaction */
 	if (D < 0) { //spheres do not touch 
@@ -376,7 +377,7 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 	contactPhysics->crossSection = Mathr::PI*pow((R1+R2)/2,2);  // use the average radius instead of the minimum
 	} else if (totalAvgRadius > 0) {
 	contactPhysics->crossSection = Mathr::PI*pow(totalAvgRadius, 2);  // use total average radius
-	} else if(xSectionWeibullShapeParameter>0 && xSectionWeibullScaleParameter>0) distributeCrossSectionsWeibull(contactPhysics);	
+	} else if(xSectionWeibullShapeParameter>0 && xSectionWeibullScaleParameter>0) distributeCrossSectionsWeibull(contactPhysics, R1, R2);	
 	else {
 	contactPhysics->crossSection = Mathr::PI*pow(min(R1,R2),2); 
 	}
@@ -500,11 +501,16 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::distributeStrengthsWeibull(shared_ptr<JCFp
 	contactPhysics->FsMax = cStrength*min(yade1->cohesion,yade2->cohesion)*contactPhysics->crossSection;
 }
 
-void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::distributeCrossSectionsWeibull(shared_ptr<JCFpmPhys> contactPhysics){
+
+void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::distributeCrossSectionsWeibull(shared_ptr<JCFpmPhys> contactPhysics, Real R1, Real R2){
 	std::random_device rd;
 	std::mt19937 e2(rd());
-	std::weibull_distribution<Real> weibullDistribution(xSectionWeibullShapeParameter, xSectionWeibullScaleParameter);
-	Real interactingRadius = scaleFactor*weibullDistribution(e2)/2.;
+	std::weibull_distribution<Real> weibullDistribution(xSectionWeibullShapeParameter, /*xSectionWeibullScaleParameter*/ 1.);
+	//Real interactingRadius = scaleFactor*weibullDistribution(e2)/2.;
+	Real correction = weibullDistribution(e2);
+	//cout << "correction " << correction << " min R1 R2 "<< min(R1, R2) << endl;
+	//cout << "put a dick in my mouth" << endl;
+	Real interactingRadius = correction*min(R1, R2);  // correcting radius to account for grain interactions
 	contactPhysics->crossSection = Mathr::PI*pow(interactingRadius,2);
 }
 	

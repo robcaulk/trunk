@@ -344,6 +344,9 @@ void VTKRecorder::action(){
 	vtkSmartPointer<vtkDoubleArray> damage = vtkSmartPointer<vtkDoubleArray>::New();
 	damage->SetNumberOfComponents(1);
 	damage->SetName("damage");
+	vtkSmartPointer<vtkDoubleArray> intrSeparation = vtkSmartPointer<vtkDoubleArray>::New();
+	intrSeparation->SetNumberOfComponents(1);
+	intrSeparation->SetName("separation");	
 	vtkSmartPointer<vtkDoubleArray> damageRel = vtkSmartPointer<vtkDoubleArray>::New();
 	damageRel->SetNumberOfComponents(1);
 	damageRel->SetName("damageRel");
@@ -470,6 +473,7 @@ void VTKRecorder::action(){
 			const NormShearPhys* phys = YADE_CAST<NormShearPhys*>(I->phys.get());
 			const GenericSpheresContact* geom = YADE_CAST<GenericSpheresContact*>(I->geom.get());
 			// gives _signed_ scalar of normal force, following the convention used in the respective constitutive law
+			//Real separation = phys->separation;
 			Real fn=phys->normalForce.dot(geom->normal); 
 			Real fs[3]={ (Real) std::abs(phys->shearForce[0]), (Real) std::abs(phys->shearForce[1]), (Real) std::abs(phys->shearForce[2])};
 			// add the value once for each interaction object that we created (might be 2 for the periodic boundary)
@@ -490,6 +494,7 @@ void VTKRecorder::action(){
 				}
 				else if (recActive[REC_JCFPM]){
 					const JCFpmPhys* jcfpmphys = YADE_CAST<JCFpmPhys*>(I->phys.get());
+					intrSeparation->InsertNextValue(jcfpmphys->separation);
 					intrIsCohesive->InsertNextValue(jcfpmphys->isCohesive);
 					intrIsOnJoint->InsertNextValue(jcfpmphys->isOnJoint);
 					intrForceN->InsertNextValue(fn);
@@ -965,6 +970,7 @@ void VTKRecorder::action(){
 		if (recActive[REC_JCFPM]) { 
 			intrPd->GetCellData()->AddArray(intrIsCohesive);
 			intrPd->GetCellData()->AddArray(intrIsOnJoint);
+			intrPd->GetCellData()->AddArray(intrSeparation);
 		}
 		if (recActive[REC_WPM]){
 			intrPd->GetCellData()->AddArray(wpmNormalForce);
