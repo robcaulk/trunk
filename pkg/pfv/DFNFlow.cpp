@@ -125,6 +125,14 @@ public:
 	}
 	vtkfile.end_data();}
 
+	if (1){
+	vtkfile.begin_data("volume",CELL_DATA,SCALARS,FLOAT);
+	for (FiniteCellsIterator cell = Tri.finite_cells_begin(); cell != Tri.finite_cells_end(); ++cell) {
+		bool isDrawable = cell->info().isReal() && cell->vertex(0)->info().isReal() && cell->vertex(1)->info().isReal() && cell->vertex(2)->info().isReal()  && cell->vertex(3)->info().isReal();
+		if (isDrawable){vtkfile.write_data(cell->info().volume());}
+	}
+	vtkfile.end_data();}
+
 	if(1){
 	vtkfile.begin_data("fractureTip",CELL_DATA,SCALARS,FLOAT);
 	for (FiniteCellsIterator cell = Tri.finite_cells_begin(); cell != Tri.finite_cells_end(); ++cell) {
@@ -227,7 +235,7 @@ void DFNFlowEngine::setPositionsBuffer(bool current)
 	shared_ptr<Sphere> sph ( new Sphere );
         const int Sph_Index = sph->getClassIndexStatic();
 	FOREACH ( const shared_ptr<Body>& b, *scene->bodies ) {
-                if (!b || ignoredBody==b->getId()) continue;
+		if (!b || ignoredBody==b->getId() || (mask>0 and !b->maskCompatible(mask))) continue;
                 posData& dat = buffer[b->getId()];
 		dat.id=b->getId();
 		dat.pos=b->state->pos;
@@ -240,8 +248,8 @@ void DFNFlowEngine::setPositionsBuffer(bool current)
 // function allows us to interpolate information about fractured/non fractured cells so we can identify newly fractured cells, monitor half width, and identify fracture tip
 void DFNFlowEngine::interpolateCrack(Tesselation& Tes, Tesselation& NewTes){
         RTriangulation& Tri = Tes.Triangulation();
-		RTriangulation& newTri = NewTes.Triangulation();
-		FiniteCellsIterator cellEnd = newTri.finite_cells_end();
+	RTriangulation& newTri = NewTes.Triangulation();
+	FiniteCellsIterator cellEnd = newTri.finite_cells_end();
 	#ifdef YADE_OPENMP
     	const long size = NewTes.cellHandles.size();
 	#pragma omp parallel for num_threads(ompThreads>0 ? ompThreads : 1)
@@ -381,9 +389,9 @@ void DFNFlowEngine::trickPermeability(Solver* flow)
 	leakOffRate = 0;	
 	const RTriangulation& Tri = flow->T[flow->currentTes].Triangulation();
 //	cout << "DFN --- Assigned tri" <<endl;
-    if (!first) interpolateCrack(solver->T[solver->currentTes], flow->T[flow->currentTes]);
+	if (!first) interpolateCrack(solver->T[solver->currentTes], flow->T[flow->currentTes]);
 //	cout << "DFN ---- interpolated crack" << endl;
-    const JCFpmPhys* jcfpmphys;
+	const JCFpmPhys* jcfpmphys;
 	const shared_ptr<InteractionContainer> interactions = scene->interactions;
 	int numberOfCrackedOrJoinedInteractions = 0;
 	int numberOfTrickedCells = 0;
