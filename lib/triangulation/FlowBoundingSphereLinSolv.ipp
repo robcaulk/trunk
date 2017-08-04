@@ -102,6 +102,7 @@ FlowBoundingSphereLinSolv<_Tesselation,FlowType>::FlowBoundingSphereLinSolv(): F
 	#endif	
 	#ifdef CHOLMOD_LIB
 	cholmod_l_start(&com);
+	//com.maxGpuMemFraction = 0.5;  // allocate only half of the GPU memory because we have two solvers existing at a time.K
 	com.useGPU=1; //useGPU;
 	com.supernodal = CHOLMOD_AUTO; //CHOLMOD_SUPERNODAL;
 	#endif

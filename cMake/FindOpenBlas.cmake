@@ -7,7 +7,8 @@
 #FIND_LIBRARY(OPENBLAS_LIBRARY NAMES libblas.so PATHS /usr/lib/openblas-base NO_DEFAULT_PATH)
 # set the library manually because we might need the other libblas for python??
 SET(OPENBLAS_LIBRARY /usr/lib/openblas-base/libblas.so)
-
+#SET(BLAS_LIBRARY /usr/lib/libblas.so)
+#SET(OPENBLAS_LIBRARY /usr/local/OpenBLASInstall/lib/libopenblas.so)
 # handle the QUIETLY and REQUIRED arguments and set LOKI_FOUND to TRUE if
 # all listed variables are TRUE
 INCLUDE(FindPackageHandleStandardArgs)

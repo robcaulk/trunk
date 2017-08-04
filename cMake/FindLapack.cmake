@@ -6,7 +6,8 @@
 
 #FIND_LIBRARY(LAPACK_LIBRARY NAMES lapack liblapack PATHS /usr/lib/lapack )
 
-SET(LAPACK_LIBRARY /usr/lib/openblas-base/liblapack.so)
+#SET(LAPACK_LIBRARY /usr/lib/liblapack.so.3)
+SET(LAPACK_LIBRARY /usr/lib/liblapack.so)  # force other lapack?
 # handle the QUIETLY and REQUIRED arguments and set LOKI_FOUND to TRUE if
 # all listed variables are TRUE
 INCLUDE(FindPackageHandleStandardArgs)
