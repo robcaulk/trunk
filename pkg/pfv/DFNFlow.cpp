@@ -446,12 +446,12 @@ void DFNFlowEngine::trickPermeability(Solver* flow)
 			};	
 		}
 	}
-	averageAperture = SumOfApertures/numberOfCrackedOrJoinedInteractions; /// DEBUG
-	averageFracturePermeability = sumOfPermeability/numberOfTrickedCells;
+	if (numberOfCrackedOrJoinedInteractions !=0) averageAperture = SumOfApertures/numberOfCrackedOrJoinedInteractions; /// DEBUG
+	if (numberOfTrickedCells != 0) averageFracturePermeability = sumOfPermeability/numberOfTrickedCells;
 	if (debug) cout << "DFN --- Average Fracture Permeability =" << averageFracturePermeability << endl;
 
 	if (stepCrackHalfWidth > fractureHalfWidth) fractureHalfWidth = stepCrackHalfWidth;
-	branchIntensity = crackArea/fractureHalfWidth;
+	if (fractureHalfWidth !=0) branchIntensity = crackArea/fractureHalfWidth;
 //	cout << "fracture half width = " << fractureHalfWidth << endl;
 // 	cout << " Average aperture in joint ( -D ) = " << AverageAperture << endl; /// DEBUG
 }

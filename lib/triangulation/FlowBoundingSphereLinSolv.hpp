@@ -11,16 +11,21 @@
 #define EIGENSPARSE_LIB //comment this if CHOLMOD is not available
 // #define TAUCS_LIB //comment this if TAUCS lib is not available, it will disable PARDISO lib as well
 
+#define CHOLMOD_LIB
+
 #ifdef EIGENSPARSE_LIB
 	#include <Eigen/Sparse>
 	#include <Eigen/SparseCore>
 	#include <Eigen/CholmodSupport>
+	#include <cholmod.h>
+	#include <Eigen/IterativeLinearSolvers>
 #endif
 #ifdef TAUCS_LIB
 #define TAUCS_CORE_DOUBLE
 #include <complex> //THIS ONE MUST ABSOLUTELY BE INCLUDED BEFORE TAUCS.H!
 #include <stdlib.h>
 #include <float.h>
+#include <time.h>
 extern "C" {
 #include "taucs.h"
 }
@@ -55,6 +60,7 @@ public:
 	using FlowType::tesselation;
 	using FlowType::resetRHS;
 	using FlowType::factorizeOnly; 
+	using FlowType::useGPU;
 
 	//! TAUCS DECs
 	vector<FiniteCellsIterator> orderedCells;
@@ -69,6 +75,7 @@ public:
 	typedef Eigen::Triplet<double> ETriplet;
 	std::vector<ETriplet> tripletList;//The list of non-zero components in Eigen sparse matrix
 	Eigen::CholmodDecomposition<Eigen::SparseMatrix<double>, Eigen::Lower > eSolver;
+	Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower|Eigen::Upper> cg;
 	bool factorizedEigenSolver;
 	void exportMatrix(const char* filename) {ofstream f; f.open(filename); f<<A; f.close();};
 	void exportTriplets(const char* filename) {ofstream f; f.open(filename);
@@ -78,7 +85,24 @@ public:
 	//here we specify both thread numbers independently
 	int numFactorizeThreads;
 	int numSolveThreads;
+	Eigen::VectorXd eguess;
 	#endif
+
+	#ifdef CHOLMOD_LIB
+	cholmod_factor* L;
+	
+	cholmod_sparse* Achol;
+	cholmod_common com;
+	void add_T_entry(cholmod_triplet* T, long r, long c, double x)
+	{
+		size_t k = T->nnz;
+		((long*)T->i)[k] = r;
+		((long*)T->j)[k] = c;
+		((double*)T->x)[k] = x;
+		T->nnz++;
+	}
+	#endif
+	
 
 	#ifdef TAUCS_LIB
 	taucs_ccs_matrix SystemMatrix;
@@ -155,6 +179,8 @@ public:
 	int pardisoSolveTest();
 	int pardisoSolve(Real dt);
 	int eigenSolve(Real dt);
+	int cholmodSolve(Real dt);
+	int conjugateGradSolve(Real dt);	
 	
 	void copyGsToCells();
 	void copyCellsToGs(Real dt);
@@ -178,6 +204,12 @@ public:
 			break;
 		case 3:
 			eigenSolve(dt);
+			break;
+		case 4:
+			cholmodSolve(dt);
+			break;
+		case 5:
+			conjugateGradSolve(dt);
 			break;
 		}
 		computedOnce=true;
