@@ -107,7 +107,7 @@ class FlowBoundingSphere : public Network<_Tesselation>
 
 		double viscosity;
 		double fluidBulkModulus;
-		bool useGPU;
+		int useGPU;
 		
 		void displayStatistics();
 		void initializePressure ( double pZero );

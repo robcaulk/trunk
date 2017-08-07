@@ -73,7 +73,7 @@ FlowBoundingSphereLinSolv<_Tesselation,FlowType>::~FlowBoundingSphereLinSolv()
 		cholmod_l_free_sparse(&Achol, &com);
 		cholmod_l_free_factor(&L, &com);
 		cholmod_l_finish(&com);
-		cout << "Achol memory freed and cholmod finished" <<endl;
+		//cout << "Achol memory freed and cholmod finished" <<endl;
 	}
 	#endif
 }
@@ -102,7 +102,7 @@ FlowBoundingSphereLinSolv<_Tesselation,FlowType>::FlowBoundingSphereLinSolv(): F
 	#endif	
 	#ifdef CHOLMOD_LIB
 	cholmod_l_start(&com);
-	//com.maxGpuMemFraction = 0.5;  // allocate only half of the GPU memory because we have two solvers existing at a time.K
+	//com.maxGpuMemFraction = gpuMemFraction;  // allocate only half of the GPU memory because we have two solvers existing at a time.K
 	com.useGPU=1; //useGPU;
 	com.supernodal = CHOLMOD_AUTO; //CHOLMOD_SUPERNODAL;
 	#endif
@@ -298,6 +298,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
  			A.resize(ncols,ncols);
 			A.setFromTriplets(tripletList.begin(), tripletList.end());
 		#endif
+		#ifdef CHOLMOD_LIB
 		} else if (useSolver==4){
 			//com.useGPU=useGPU;
 			const size_t nnz = T_nnz;
@@ -317,7 +318,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
 			//cout << "cholmod sparse matrix created" << endl;
 			cholmod_l_print_sparse(Achol, "Achol", &com);
 			cholmod_l_free_triplet(&T, &com);
-
+		#endif
 		}
 		
 		isLinearSystemSet=true;
@@ -683,7 +684,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::eigenSolve(Real dt)
 template<class _Tesselation, class FlowType>
 int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::cholmodSolve(Real dt)
 {
-#ifdef EIGENSPARSE_LIB
+#ifdef CHOLMOD_LIB
 	if (!isLinearSystemSet || (isLinearSystemSet && reApplyBoundaryConditions()) || !updatedRHS) ncols = setLinearSystem(dt);
 	copyCellsToLin(dt);
 	
@@ -741,7 +742,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::cholmodSolve(Real dt)
 	cholmod_l_free_dense(&B, &com);
 	//cout << "memory freed (B)" << endl;
 #else
-	cerr<<"Flow engine not compiled with eigen, nothing computed if useSolver=3"<<endl;
+	cerr<<"Flow engine not compiled with CHOLMOD, nothing computed if useSolver=4"<<endl;
 #endif
 	return 0;
 }

@@ -8,8 +8,8 @@
 FIND_PATH(METIS_INCLUDE_DIR metis.h PATHS /usr/local/SuiteSparse/include)
 FIND_LIBRARY(METIS_LIBRARY NAMES libmetis.so PATHS /usr/local/SuiteSparse/lib)
 
-MESSAGE(STATUS "Found Metis Include " ${METIS_INCLUDE_DIR})
-MESSAGE(STATUS "FOUND METIS library " ${METIS_LIBRARY})
+MESSAGE(STATUS "Found Metis include in" ${METIS_INCLUDE_DIR})
+MESSAGE(STATUS "Found Metis library in" ${METIS_LIBRARY})
 # handle the QUIETLY and REQUIRED arguments and set LOKI_FOUND to TRUE if
 # all listed variables are TRUE
 INCLUDE(FindPackageHandleStandardArgs)
