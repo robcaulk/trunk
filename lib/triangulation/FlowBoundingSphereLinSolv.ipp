@@ -83,8 +83,11 @@ FlowBoundingSphereLinSolv<_Tesselation,FlowType>::FlowBoundingSphereLinSolv(): F
 	#ifdef EIGENSPARSE_LIB
 	factorizedEigenSolver=false;
 	factorizeOnly = false;
-	numFactorizeThreads=1;
-	numSolveThreads=1;
+	//numFactorizeThreads=1;
+	//numSolveThreads=1;
+	numFactorizeThreads=omp_get_max_threads();
+	numSolveThreads=omp_get_max_threads();
+	Eigen::initParallel();
 	#endif
 }
 
@@ -271,7 +274,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
 			}
 		#endif //TAUCS_LIB
 		#ifdef EIGENSPARSE_LIB
-		} else if (useSolver==3){
+		} else if (useSolver==3 || useSolver==4){
 			tripletList.clear(); tripletList.resize(T_nnz);
 			for(int k=0;k<T_nnz;k++) tripletList[k]=ETriplet(is[k]-1,js[k]-1,vs[k]);
  			A.resize(ncols,ncols);
@@ -429,7 +432,7 @@ void FlowBoundingSphereLinSolv<_Tesselation,FlowType>::vectorizedGaussSeidel(Rea
 	vector<Real> t_sum_p, t_dp_max, t_sum_dp, t_p_max;
 	t_sum_dp.resize(num_threads);
 	t_dp_max.resize(num_threads);
-	t_p_max.resize(num_threads);
+	t_p_max.resize(num_threads);copyCellsToLin
 	t_sum_p.resize(num_threads);
 #endif
 	int j2=-1;
@@ -540,6 +543,84 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::eigenSolve(Real dt)
 #endif
 	return 0;
 }
+
+
+//iterative conjugate gradient solve
+template<class _Tesselation, class FlowType>
+int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::conjugateGradientSolve(Real dt)
+{
+#ifdef EIGENSPARSE_LIB
+	if (!isLinearSystemSet || (isLinearSystemSet && reApplyBoundaryConditions()) || !updatedRHS) ncols = setLinearSystem(dt);
+	copyCellsToLin(dt);
+	//FIXME: we introduce new Eigen vectors, then we have to copy from/to c-arrays, can be optimized later
+	Eigen::VectorXd eb(ncols); Eigen::VectorXd ex(ncols);
+	for (int k=0; k<ncols; k++) eb[k]=T_bv[k];
+	if (!factorizedEigenSolver) {
+		//ConjugateGradient<SparseMatrix<double>, Lower|Upper> cg;
+		//Eigen::setNbThreads(0);
+		eguess = Eigen::VectorXd::Zero(ncols);
+		//openblas_set_num_threads(omp_get_max_threads());
+		//omp_set_num_threads(omp_get_max_threads());
+		//Eigen::setNbThreads(omp_get_max_threads());
+		cout << "About to compute A" << endl;
+			
+		//cg.setTolerance(tolerance);
+		//cg.setMaxIterations(200000);
+		cg.compute(A);
+		cout << "A computed" << endl;
+		//eSolver2.compute(A);
+		//biCGSolve.setTolerance(tolerance);
+		//biCGSolve.setMaxIterations(200000);		
+		//biCGSolve.compute(rowMajorA);
+		//eSolver.setMode(Eigen::CholmodSupernodalLLt);
+		//
+		//eSolver.compute(A);
+		//Check result
+		//if (eSolver.cholmod().status>0) {
+		//	cerr << "something went wrong in Cholesky factorization, use LDLt as fallback this time" << eSolver.cholmod().status << endl;
+		//	eSolver.setMode(Eigen::CholmodLDLt);
+		//	eSolver.compute(A);
+		//}
+		factorizedEigenSolver = true;
+	}
+	// backgroundAction only wants to factorize, no need to solve and copy to cells.
+	if (!factorizeOnly){
+		//openblas_set_num_threads(numSolveThreads);
+		//Eigen::setNbThreads(0);
+		//openblas_set_num_threads(omp_get_max_threads());
+		//omp_set_num_threads(omp_get_max_threads());
+		//Eigen::setNbThreads(omp_get_max_threads());
+		cout << "number of eigen threads" << Eigen::nbThreads( ) << endl;
+		cout<<"omp_max_threads "<< omp_get_max_threads() << endl;
+		//cout << "About to solve for x" << endl;
+		//cout << "Example value of b " << eb[20] << endl;
+		//cout << "Example value of A" << A(1,1) << endl;
+		ex = Eigen::VectorXd::Zero(ncols);
+		ex = cg.solve(eb);
+		cout << "x solved for" << endl;
+		//ex = cg.solveWithGuess(eb,eguess);
+		//ex = eSolver2.solve(eb);
+		//ex = biCGSolve.solveWithGuess(eb,eguess);
+		//cout << "solved for x" << endl;
+		
+		//ex = biCGSolve.solve(eb);
+		cout << "printing ex" << ex << endl;
+		cout << "copying x back to T_x" << endl;
+		for (int k=0; k<ncols; k++){
+			T_x[k]=ex[k];
+			eguess[k] = ex[k];	
+		}
+		//eguess = ex;
+		cout << "done copying back to T_x" << endl;
+		copyLinToCells();
+		cout << "done copying values to cells" << endl;
+	}
+#else
+	cerr<<"Flow engine not compiled with eigen, nothing computed if useSolver=4"<<endl;
+#endif
+	return 0;
+}
+
 
 
 template<class _Tesselation, class FlowType>

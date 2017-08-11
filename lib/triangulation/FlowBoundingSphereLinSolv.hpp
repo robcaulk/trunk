@@ -15,6 +15,7 @@
 	#include <Eigen/Sparse>
 	#include <Eigen/SparseCore>
 	#include <Eigen/CholmodSupport>
+	#include <Eigen/IterativeLinearSolvers>
 #endif
 #ifdef TAUCS_LIB
 #define TAUCS_CORE_DOUBLE
@@ -27,6 +28,7 @@ extern "C" {
 #endif
 
 #include "FlowBoundingSphere.hpp"
+using namespace Eigen;
 
 ///_____ Declaration ____
 
@@ -66,10 +68,14 @@ public:
 	#ifdef EIGENSPARSE_LIB
 	//Eigen's sparse matrix and solver
 	Eigen::SparseMatrix<double> A;
+	Eigen::SparseMatrix<double,Eigen::RowMajor> rowMajorA;
 	typedef Eigen::Triplet<double> ETriplet;
 	std::vector<ETriplet> tripletList;//The list of non-zero components in Eigen sparse matrix
 	Eigen::CholmodDecomposition<Eigen::SparseMatrix<double>, Eigen::Lower > eSolver;
+	Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Lower|Upper> cg;
+	Eigen::BiCGSTAB<Eigen::SparseMatrix<double,Eigen::RowMajor>> biCGSolve;
 	bool factorizedEigenSolver;
+	Eigen::VectorXd eguess;
 	void exportMatrix(const char* filename) {ofstream f; f.open(filename); f<<A; f.close();};
 	void exportTriplets(const char* filename) {ofstream f; f.open(filename);
 		for (int k=0; k<A.outerSize(); ++k)
@@ -155,6 +161,7 @@ public:
 	int pardisoSolveTest();
 	int pardisoSolve(Real dt);
 	int eigenSolve(Real dt);
+	int conjugateGradientSolve(Real dt);
 	
 	void copyGsToCells();
 	void copyCellsToGs(Real dt);
@@ -178,6 +185,9 @@ public:
 			break;
 		case 3:
 			eigenSolve(dt);
+			break;
+		case 4: 
+			conjugateGradientSolve(dt);
 			break;
 		}
 		computedOnce=true;
