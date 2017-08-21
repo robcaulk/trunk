@@ -206,6 +206,7 @@ class DFNFlowEngine : public DFNFlowEngineT
 	((Real, jointResidual, 0,,"calibration parameter for residual aperture of joints"))
 	((Real, inducedResidual, 0,,"calibration parameter for residual aperture of induced cracks"))
 	((bool, updatePositions, false,,"update particles positions when rebuilding the mesh (experimental)"))
+	((bool, trickClosedCracks, false,,"trick permeability of shear failed frictional interactions"))
  	((bool, printFractureTotalArea, 0,,"The final fracture area computed through the network")) /// Trying to get fracture's surface
 	((bool, calcCrackArea, true,,"The amount of crack per pore () is updated if calcCrackArea=True")) /// Trying to get fracture's surface((bool))
     	((bool, calcCrackHalfWidth, true,,"Calculate the fracture halfwidth")) /// Trying to get fracture's surface
@@ -441,8 +442,7 @@ void DFNFlowEngine::trickPermeability(Solver* flow)
                 	if (aperture > maxAperture) maxAperture=aperture;
 				SumOfApertures += aperture;
 				trickPermeability(edge, fracturePerm, flow);
-// 				trickPermeability(edge, jcfpmphys->crackJointAperture, residualAperture); // we should be able to use this line
-				
+// 				trickPermeability(edge, jcfpmphys->crackJointAperture, residualAperture); // we should be able to use this line	
 			};	
 		}
 	}

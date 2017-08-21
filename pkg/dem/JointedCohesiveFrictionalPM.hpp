@@ -126,6 +126,10 @@ class Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM: public LawFunctor{
 			((bool,neverErase,false,,"Keep interactions even if particles go away from each other (only in case another constitutive law is in the scene (e.g. should be used with DFNFlow)"))
 			((bool,extendSmoothJoint,false,,"New shear failures ahead of a hydraulically driven fracture tip behave according to smooth joint logic (experimental)"))
 			((Real,fracProximityFactor,8.,,"fracProximityFactor*avgIntractingRadius = max distance from fracture thatnew  shear failures will obey eSJM :yref:`eSJM<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.extendedSmoothJoint>` "))
+			((Real,totalTensCracksE,0.,,"calculate the overall energy dissipated by interparticle microcracking in tension."))
+                        ((Real,totalShearCracksE,0.,,"calculate the overall energy dissipated by interparticle microcracking in shear."))
+			((int,nbTensCracks,0,,"number of tensile microcracks."))
+                        ((int,nbShearCracks,0,,"number of shear microcracks."))
 		);
 		DECLARE_LOGGER;	
 };

@@ -78,6 +78,8 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	  
 	  if ( phys->isCohesive && (phys->FnMax>0) && (std::abs(D)>Dtensile) ) {
 	    
+            nbTensCracks++;
+
 	    // update body state with the number of broken bonds
 	    JCFpmState* st1=dynamic_cast<JCFpmState*>(b1->state.get());
 	    JCFpmState* st2=dynamic_cast<JCFpmState*>(b2->state.get());
@@ -87,14 +89,19 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	    st2->tensBreak+=1;
 	    st1->tensBreakRel+=1.0/st1->noIniLinks;
 	    st2->tensBreakRel+=1.0/st2->noIniLinks;
+
+
+            Real scalarNF=phys->normalForce.norm();
+	    Real scalarSF=phys->shearForce.norm();
+            totalTensCracksE+=0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) );
 	    
     	    // create a text file to record properties of the broken bond (iteration, position, type (tensile), cross section and contact normal orientation)
 	    if (recordCracks){
 	      std::ofstream file (fileCracks.c_str(), !cracksFileExist ? std::ios::trunc : std::ios::app);
-	      if(file.tellp()==0){ file <<"i p0 p1 p2 t s norm0 norm1 norm2"<<endl; }
+	      if(file.tellp()==0){ file <<"i p0 p1 p2 t s norm0 norm1 norm2 onFrac nrg"<<endl; }
 	      Vector3r crackNormal=Vector3r::Zero();
 	      if ((smoothJoint) && (phys->isOnJoint)) { crackNormal=phys->jointNormal; } else {crackNormal=geom->normal;}
-	      file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( geom->contactPoint[0] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[1] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[2] ) <<" "<< 0 <<" "<< boost::lexical_cast<string> ( 0.5*(geom->radius1+geom->radius2) ) <<" "<< boost::lexical_cast<string> ( crackNormal[0] ) <<" "<< boost::lexical_cast<string> ( crackNormal[1] ) <<" "<< boost::lexical_cast<string> ( crackNormal[2] ) << " " << boost::lexical_cast<string> ( phys->onFracture) << endl;
+	      file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( geom->contactPoint[0] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[1] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[2] ) <<" "<< 0 <<" "<< boost::lexical_cast<string> ( 0.5*(geom->radius1+geom->radius2) ) <<" "<< boost::lexical_cast<string> ( crackNormal[0] ) <<" "<< boost::lexical_cast<string> ( crackNormal[1] ) <<" "<< boost::lexical_cast<string> ( crackNormal[2] ) << " " << boost::lexical_cast<string> ( phys->onFracture) << " " <<boost::lexical_cast<string> ( 0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) ) ) << endl;
 	    }
 	    cracksFileExist=true;
 	    /// Timos
@@ -150,7 +157,8 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	  if ((smoothJoint) && (phys->isOnJoint)) {phys->dilation=phys->jointCumulativeSliding*phys->tanDilationAngle-D; phys->initD+=(jointSliding*phys->tanDilationAngle);}
 	  // take into account shear cracking -> are those lines critical? -> TODO testing with and without
 	  if ( phys->isCohesive ) { 
-			
+            nbShearCracks++; 
+
 	    // update body state with the number of broken bonds
 	    JCFpmState* st1=dynamic_cast<JCFpmState*>(b1->state.get());
 	    JCFpmState* st2=dynamic_cast<JCFpmState*>(b2->state.get());
@@ -161,15 +169,19 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	    st1->shearBreakRel+=1.0/st1->noIniLinks;
 	    st2->shearBreakRel+=1.0/st2->noIniLinks;
 
+	    Real scalarNF=phys->normalForce.norm();
+	    Real scalarSF=phys->shearForce.norm();
+            totalShearCracksE+=0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) );
+
 	    // extend smooth joint model
 	    if (phys->breakType==1 && extendSmoothJoint && !phys->isOnJoint) orientJointNormal(phys, geom, b1, b2, contact);
 	    // create a text file to record properties of the broken bond (iteration, position, type (shear), cross section and contact normal orientation)
 	    if (recordCracks){
 	      std::ofstream file (fileCracks.c_str(), !cracksFileExist ? std::ios::trunc : std::ios::app);
-	      if(file.tellp()==0){ file <<"i p0 p1 p2 t s norm0 norm1 norm2"<<endl; }
+	      if(file.tellp()==0){ file <<"i p0 p1 p2 t s norm0 norm1 norm2 onFrac nrg"<<endl; }
 	      Vector3r crackNormal=Vector3r::Zero();
 	      if ((smoothJoint) && (phys->isOnJoint)) { crackNormal=phys->jointNormal; } else {crackNormal=geom->normal;}
-	      file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( geom->contactPoint[0] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[1] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[2] ) <<" "<< 1 <<" "<< boost::lexical_cast<string> ( 0.5*(geom->radius1+geom->radius2) ) <<" "<< boost::lexical_cast<string> ( crackNormal[0] ) <<" "<< boost::lexical_cast<string> ( crackNormal[1] ) <<" "<< boost::lexical_cast<string> ( crackNormal[2] ) << " " << boost::lexical_cast<string> ( phys->onFracture) << endl;
+	      file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( geom->contactPoint[0] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[1] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[2] ) <<" "<< 1 <<" "<< boost::lexical_cast<string> ( 0.5*(geom->radius1+geom->radius2) ) <<" "<< boost::lexical_cast<string> ( crackNormal[0] ) <<" "<< boost::lexical_cast<string> ( crackNormal[1] ) <<" "<< boost::lexical_cast<string> ( crackNormal[2] ) << " " << boost::lexical_cast<string> ( phys->onFracture) << " " <<boost::lexical_cast<string> ( 0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) ) ) << endl;
 	    }
 	    cracksFileExist=true;
 	    

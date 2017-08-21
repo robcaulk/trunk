@@ -715,7 +715,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::cholmodSolve(Real dt)
 		//assert(L->minor == ncols);
 		//assert(L->is_ll == 0);
 		//assert(com.status == CHOLMOD_OK);
-		factorizedEigenSolver=true;
+		factorizedEigenSolver=true; 
 	}
 	
 	if (!factorizeOnly){
