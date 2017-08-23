@@ -77,6 +77,14 @@ class JCFpmPhys: public NormShearPhys {
 			((bool, onFracture,0,,"Flag for interactions that are associated with fractured cells. Used for extended smooth joint logic."))
 
 			((bool, breakOccurred,0,,"Flag used to trigger retriangulation as soon as a cohesive bond breaks in FlowEngine (for DFNFlow use only)"))
+			((Real,strainEnergy,0,,"strain energy of interaction"))
+			((Real,momentStrainEnergy,0,,"reference strain energy of surrounding interactions"))
+			((Real,momentStrainEnergyChange,0,,"storage of the maximum strain energy change for surrounding interactions"))
+			((Real,momentMagnitude,0,,"Moment magnitude of a failed interaction"))
+			((bool,firstMomentCalc,true,,"Flag for moment calculation"))
+			((Real,elapsedIter,0,,"number of elapsed iterations for moment calculation"))
+			((bool,momentCalculated,false,,"Flag for moment calculation"))
+			((int,nearbyFound,0,,"Count used to debug moment calc"))		
 			,
 			createIndex();
 			,
@@ -118,6 +126,7 @@ class Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM: public LawFunctor{
 		virtual bool go(shared_ptr<IGeom>& _geom, shared_ptr<IPhys>& _phys, Interaction* I);
 		FUNCTOR2D(ScGeom,JCFpmPhys);
 		void orientJointNormal(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact);
+		void computeMoment(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact);
 		YADE_CLASS_BASE_DOC_ATTRS(Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM,LawFunctor,"Interaction law for cohesive frictional material, e.g. rock, possibly presenting joint surfaces, that can be mechanically described with a smooth contact logic [Ivars2011]_ (implemented in Yade in [Scholtes2012]_). See examples/jointedCohesiveFrictionalPM for script examples. Joint surface definitions (through stl meshes or direct definition with gts module) are illustrated there.",
 			((string,Key,"",,"string specifying the name of saved file 'cracks___.txt', when :yref:`recordCracks<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.recordCracks>` is true."))
 			((bool,cracksFileExist,false,,"if true (and if :yref:`recordCracks<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.recordCracks>`), data are appended to an existing 'cracksKey' text file; otherwise its content is reset."))
@@ -126,6 +135,8 @@ class Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM: public LawFunctor{
 			((bool,neverErase,false,,"Keep interactions even if particles go away from each other (only in case another constitutive law is in the scene (e.g. should be used with DFNFlow)"))
 			((bool,extendSmoothJoint,false,,"New shear failures ahead of a hydraulically driven fracture tip behave according to smooth joint logic (experimental)"))
 			((Real,fracProximityFactor,8.,,"fracProximityFactor*avgIntractingRadius = max distance from fracture thatnew  shear failures will obey eSJM :yref:`eSJM<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.extendedSmoothJoint>` "))
+			((Real,momentRadiusFactor,5.,,"Average particle diameter multiplier for moment magnitude calculation"))
+			((Real,elapsedIterFactor,20,,"Factor multiplied by particle diameter to yield allowable iterations"))
 			((Real,totalTensCracksE,0.,,"calculate the overall energy dissipated by interparticle microcracking in tension."))
                         ((Real,totalShearCracksE,0.,,"calculate the overall energy dissipated by interparticle microcracking in shear."))
 			((int,nbTensCracks,0,,"number of tensile microcracks."))

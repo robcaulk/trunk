@@ -61,6 +61,20 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	
 	phys->crackJointAperture = D<0? -D : 0.; // for DFNFlow
 	phys->separation = D; // track the separation between particles
+	if (!phys->isBroken) phys->strainEnergy = 0.5*((pow(phys->normalForce.norm(),2)/phys->kn) + (pow(phys->shearForce.norm(),2)/phys->ks));
+
+	if (phys->isBroken && recordCracks && !phys->momentCalculated){
+		computeMoment(phys, geom, b1, b2, contact);
+		if (phys->momentCalculated){
+			std::ofstream file (fileCracks.c_str(), !cracksFileExist ? std::ios::trunc : std::ios::app);
+			if(file.tellp()==0){ file <<"i p0 p1 p2 t s norm0 norm1 norm2 onFrac nrg moment"<<endl; }
+			Vector3r crackNormal=Vector3r::Zero();
+			if ((smoothJoint) && (phys->isOnJoint)) { crackNormal=phys->jointNormal; } else {crackNormal=geom->normal;}
+			file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( geom->contactPoint[0] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[1] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[2] ) <<" "<< boost::lexical_cast<string>( phys->breakType ) <<" "<< boost::lexical_cast<string> ( 0.5*(geom->radius1+geom->radius2) ) <<" "<< boost::lexical_cast<string> ( crackNormal[0] ) <<" "<< boost::lexical_cast<string> ( crackNormal[1] ) <<" "<< boost::lexical_cast<string> ( crackNormal[2] ) << " " << boost::lexical_cast<string> ( phys->onFracture) << " " << boost::lexical_cast<string> ( phys->strainEnergy ) << " " <<  boost::lexical_cast<string> ( phys->momentMagnitude ) << endl;
+			cracksFileExist=true;
+		}
+		
+	}
 
 	/* Determination of interaction */
 	if (D < 0) { //spheres do not touch 
@@ -96,14 +110,14 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
             totalTensCracksE+=0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) );
 	    
     	    // create a text file to record properties of the broken bond (iteration, position, type (tensile), cross section and contact normal orientation)
-	    if (recordCracks){
-	      std::ofstream file (fileCracks.c_str(), !cracksFileExist ? std::ios::trunc : std::ios::app);
-	      if(file.tellp()==0){ file <<"i p0 p1 p2 t s norm0 norm1 norm2 onFrac nrg"<<endl; }
-	      Vector3r crackNormal=Vector3r::Zero();
-	      if ((smoothJoint) && (phys->isOnJoint)) { crackNormal=phys->jointNormal; } else {crackNormal=geom->normal;}
-	      file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( geom->contactPoint[0] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[1] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[2] ) <<" "<< 0 <<" "<< boost::lexical_cast<string> ( 0.5*(geom->radius1+geom->radius2) ) <<" "<< boost::lexical_cast<string> ( crackNormal[0] ) <<" "<< boost::lexical_cast<string> ( crackNormal[1] ) <<" "<< boost::lexical_cast<string> ( crackNormal[2] ) << " " << boost::lexical_cast<string> ( phys->onFracture) << " " <<boost::lexical_cast<string> ( 0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) ) ) << endl;
-	    }
-	    cracksFileExist=true;
+//	    if (recordCracks){
+//	      std::ofstream file (fileCracks.c_str(), !cracksFileExist ? std::ios::trunc : std::ios::app);
+//	      if(file.tellp()==0){ file <<"i p0 p1 p2 t s norm0 norm1 norm2 onFrac nrg"<<endl; }
+//	      Vector3r crackNormal=Vector3r::Zero();
+//	      if ((smoothJoint) && (phys->isOnJoint)) { crackNormal=phys->jointNormal; } else {crackNormal=geom->normal;}
+//	      file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( geom->contactPoint[0] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[1] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[2] ) <<" "<< 0 <<" "<< boost::lexical_cast<string> ( 0.5*(geom->radius1+geom->radius2) ) <<" "<< boost::lexical_cast<string> ( crackNormal[0] ) <<" "<< boost::lexical_cast<string> ( crackNormal[1] ) <<" "<< boost::lexical_cast<string> ( crackNormal[2] ) << " " << boost::lexical_cast<string> ( phys->onFracture) << " " <<boost::lexical_cast<string> ( 0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) ) ) << endl;
+//	    }
+//	    cracksFileExist=true;
 	    /// Timos
 	    if (!neverErase) return false; 
 	    else {
@@ -115,6 +129,7 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	      phys->isBroken = true;
 	      return true; // do we need this? not sure -> yes, it ends the loop (avoid the following calculations)
 	    }
+            computeMoment(phys, geom, b1, b2, contact); // start the moment calculation (this will set the initial strain energy to be used for the strain energy change calculation 
 // 	    return true; // do we need this? no
 	  }
 	}
@@ -176,14 +191,14 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	    // extend smooth joint model
 	    if (phys->breakType==1 && extendSmoothJoint && !phys->isOnJoint) orientJointNormal(phys, geom, b1, b2, contact);
 	    // create a text file to record properties of the broken bond (iteration, position, type (shear), cross section and contact normal orientation)
-	    if (recordCracks){
-	      std::ofstream file (fileCracks.c_str(), !cracksFileExist ? std::ios::trunc : std::ios::app);
-	      if(file.tellp()==0){ file <<"i p0 p1 p2 t s norm0 norm1 norm2 onFrac nrg"<<endl; }
-	      Vector3r crackNormal=Vector3r::Zero();
-	      if ((smoothJoint) && (phys->isOnJoint)) { crackNormal=phys->jointNormal; } else {crackNormal=geom->normal;}
-	      file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( geom->contactPoint[0] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[1] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[2] ) <<" "<< 1 <<" "<< boost::lexical_cast<string> ( 0.5*(geom->radius1+geom->radius2) ) <<" "<< boost::lexical_cast<string> ( crackNormal[0] ) <<" "<< boost::lexical_cast<string> ( crackNormal[1] ) <<" "<< boost::lexical_cast<string> ( crackNormal[2] ) << " " << boost::lexical_cast<string> ( phys->onFracture) << " " <<boost::lexical_cast<string> ( 0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) ) ) << endl;
-	    }
-	    cracksFileExist=true;
+//	    if (recordCracks){
+//	      std::ofstream file (fileCracks.c_str(), !cracksFileExist ? std::ios::trunc : std::ios::app);
+//	      if(file.tellp()==0){ file <<"i p0 p1 p2 t s norm0 norm1 norm2 onFrac nrg"<<endl; }
+//	      Vector3r crackNormal=Vector3r::Zero();
+//	      if ((smoothJoint) && (phys->isOnJoint)) { crackNormal=phys->jointNormal; } else {crackNormal=geom->normal;}
+//	      file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( geom->contactPoint[0] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[1] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[2] ) <<" "<< 1 <<" "<< boost::lexical_cast<string> ( 0.5*(geom->radius1+geom->radius2) ) <<" "<< boost::lexical_cast<string> ( crackNormal[0] ) <<" "<< boost::lexical_cast<string> ( crackNormal[1] ) <<" "<< boost::lexical_cast<string> ( crackNormal[2] ) << " " << boost::lexical_cast<string> ( phys->onFracture) << " " <<boost::lexical_cast<string> ( 0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) ) ) << endl;
+//	    }
+//	    cracksFileExist=true;
 	    
 	    // set the contact properties to friction if in compression, delete contact if in tension
 	    phys->isBroken = true;
@@ -199,6 +214,7 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 		phys->normalForce = Vector3r::Zero();
 		return true; // do we need this? not sure -> yes, it ends the loop (avoid the following calculations)
 	      }
+            computeMoment(phys, geom, b1, b2, contact);  // start the moment calculation (this will set the initial strain energy to be used for the strain energy change calculation 
 	    }
 		
 	
@@ -226,7 +242,73 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	
 }
 
+void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeMoment(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact){
 
+	const shared_ptr<Shape>& sphere1 = b1->shape;
+	const shared_ptr<Shape>& sphere2 = b2->shape;
+	const Real sphereRadius1 = static_cast<Sphere*>(sphere1.get())->radius;
+	const Real sphereRadius2 = static_cast<Sphere*>(sphere2.get())->radius;
+	const Real avgDiameter = (sphereRadius1+sphereRadius2);
+	Vector3r& brokenInteractionLocation = geom->contactPoint;
+	Real totalMomentStrainEnergy = 0;
+	Real momentStrainEnergyChange = 0;
+	phys->nearbyFound=0;
+	
+
+	// search through all interactions to find nearby interactions for energy calc
+	//#ifdef YADE_OPENMP
+	//int nIntr=(int)scene->interactions->size();
+	//#pragma omp parallel for
+	//for (int j=0; j<nIntr; j++){
+	//	const shared_ptr<Interaction>& I = (*scene->interactions)[j];
+	//#else 
+	FOREACH(const shared_ptr<Interaction>& I, *scene->interactions){
+	//#endif
+		const JCFpmPhys* nearbyPhys;
+		const ScGeom* nearbyGeom;
+		if (!I || !I->geom.get() || !I->phys.get()) continue;
+		if (I && I->isReal() && JCFpmPhys::getClassIndexStatic()==I->phys->getClassIndex()){
+			nearbyPhys = YADE_CAST<JCFpmPhys*>(I->phys.get());
+			if (!nearbyPhys) continue;
+			if (I->geom.get() && !nearbyPhys->isBroken){		//nearbyPhys->isOnJoint && && !nearbyPhys->onFracture	
+				nearbyGeom = YADE_CAST<ScGeom*> (I->geom.get());
+				//cout<<"nearbyPGeom declared"<<endl;
+                    		if (!nearbyGeom) continue;
+				Vector3r nearbyInteractionLocation = nearbyGeom->contactPoint;
+				//cout<<"nearbyInteraction location"<< nearbyInteractionLocation << endl;
+				Vector3r proximityVector = nearbyInteractionLocation-brokenInteractionLocation;
+				Real proximity = proximityVector.norm();
+				//cout<<"proximity computed"<< proximity << endl;
+				//cout << "allowable radius" << avgDiameter*momentRadiusFactor << endl;
+				
+				if (proximity < avgDiameter*momentRadiusFactor){
+					totalMomentStrainEnergy += nearbyPhys->strainEnergy;
+					//phys->nearbyFound += 1;					
+				}
+			}
+		}
+	}
+
+	if(phys->firstMomentCalc){
+		phys->momentStrainEnergy = totalMomentStrainEnergy;
+		phys->firstMomentCalc = false;
+	}
+	momentStrainEnergyChange = totalMomentStrainEnergy - phys->momentStrainEnergy;
+	//cout << "Moment Strain Energy Change" << momentStrainEnergyChange << endl; 
+	//cout << "Moment strain energy" << phys->momentStrainEnergy << endl; 
+	//cout << "Total moment strain energy" << totalMomentStrainEnergy << endl;
+	//phys->momentStrainEnergy = totalMomentStrainEnergy;
+	phys->elapsedIter += 1;
+	//cout << "Elapsed iter"<< phys->elapsedIter << endl;
+	if (momentStrainEnergyChange > phys->momentStrainEnergyChange) phys->momentStrainEnergyChange = momentStrainEnergyChange;
+	if (phys->elapsedIter >= elapsedIterFactor*momentRadiusFactor){ // the elapsed time should reflect 20*particlediameters radius Hazzard and Damjanac 2013
+		phys->momentCalculated=true;   
+		//cout << "MomentEnergyChange" << momentStrainEnergyChance << endl;
+		if(phys->momentStrainEnergyChange!=0) phys->momentMagnitude = (2./3.)*log(phys->momentStrainEnergyChange)-3.2;  //empirical equation for energy magnitude (Hazzard and Damjanac 2013) 
+		//if(phys->momentStrainEnergyChange==0) cout<<"avgDiameter " << avgDiameter << " found nearby interaciton? " << phys->nearbyFound << "over " << phys->elapsedIter << " iterations" <<endl;  // debugging. It appears some strain energy searches yield decreases of strain energy in neighbor hood. We are handling these by assining a 0 magnitude...but that seems wrong. 
+	}
+					
+}
 
 void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::orientJointNormal(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact){
 		

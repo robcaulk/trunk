@@ -378,6 +378,9 @@ void VTKRecorder::action(){
 	vtkSmartPointer<vtkDoubleArray> crackNrg = vtkSmartPointer<vtkDoubleArray>::New();
 	crackNrg->SetNumberOfComponents(1);
 	crackNrg->SetName("nrg");
+	vtkSmartPointer<vtkDoubleArray> crackMoment = vtkSmartPointer<vtkDoubleArray>::New();
+	crackMoment->SetNumberOfComponents(1);
+	crackMoment->SetName("moment");
 	
 #ifdef YADE_LIQMIGRATION
 	vtkSmartPointer<vtkDoubleArray> liqVol = vtkSmartPointer<vtkDoubleArray>::New();
@@ -1026,9 +1029,9 @@ void VTKRecorder::action(){
 		if(file){
 			 while ( !file.eof() ){
 				std::string line;
-				Real i,p0,p1,p2,t,s,n0,n1,n2, onFrac, nrg;
+				Real i,p0,p1,p2,t,s,n0,n1,n2, onFrac, nrg, moment;
 				while ( std::getline(file, line)) {/* writes into string "line", a line of file "file". To go along diff. lines*/
-					file >> i >> p0 >> p1 >> p2 >> t >> s >> n0 >> n1 >> n2 >> onFrac >> nrg;
+					file >> i >> p0 >> p1 >> p2 >> t >> s >> n0 >> n1 >> n2 >> onFrac >> nrg >> moment;
 					vtkIdType pid[1];
 					pid[0] = crackPos->InsertNextPoint(p0, p1, p2);
 					crackCells->InsertNextCell(1,pid);
@@ -1039,6 +1042,7 @@ void VTKRecorder::action(){
 					Real n[3] = { n0, n1, n2 };
 					crackNorm->InsertNextTupleValue(n);
 					crackNrg->InsertNextValue(nrg);
+					crackMoment->InsertNextValue(moment);
 				}
 			}
 			 file.close();
@@ -1052,6 +1056,7 @@ void VTKRecorder::action(){
 		crackUg->GetPointData()->AddArray(crackSize);
 		crackUg->GetPointData()->AddArray(crackNorm); //see https://www.mail-archive.com/paraview@paraview.org/msg08166.html to obtain Paraview 2D glyphs conforming to this normal 
 		crackUg->GetPointData()->AddArray(crackNrg);
+		crackUg->GetPointData()->AddArray(crackMoment);
 
 		vtkSmartPointer<vtkXMLUnstructuredGridWriter> writer = vtkSmartPointer<vtkXMLUnstructuredGridWriter>::New();
 		if(compress) writer->SetCompressor(compressor);
