@@ -6,6 +6,7 @@
 #include<pkg/common/Dispatching.hpp>
 #include<pkg/common/NormShearPhys.hpp>
 #include<pkg/dem/ScGeom.hpp>
+#include <vector>
 
 /** This class holds information associated with each body state*/
 class JCFpmState: public State {
@@ -56,7 +57,6 @@ REGISTER_SERIALIZABLE(JCFpmMat);
 class JCFpmPhys: public NormShearPhys {
 	public:
 		virtual ~JCFpmPhys();
-		
 		YADE_CLASS_BASE_DOC_ATTRS_CTOR_PY(JCFpmPhys,NormShearPhys,"Representation of a single interaction of the JCFpm type, storage for relevant parameters",
 			((Real,initD,0,,"equilibrium distance for interacting particles. Computed as the interparticular distance at first contact detection."))
 			((bool,isCohesive,false,,"If false, particles interact in a frictional way. If true, particles are bonded regarding the given :yref:`cohesion<JCFpmMat.cohesion>` and :yref:`tensile strength<JCFpmMat.tensileStrength>` (or their jointed variants)."))
@@ -73,6 +73,7 @@ class JCFpmPhys: public NormShearPhys {
 			((bool,isBroken,false,,"flag for broken interactions"))
 			((Real,crackJointAperture,0,,"Relative displacement between 2 spheres (in case of a crack it is equivalent of the crack aperture)"))
 			((Real,separation,0,,"displacement between 2 spheres"))
+			((vector<shared_ptr<Interaction>>,nearbyInts,,,"vector of pointers to the nearby ints used for moment calc"))
 			((int, breakType,2,,"Identifies the break.2 is not broken 0 is tensile 1 is shear (following cracks file nomenclature). Used in DFNFlow vtk writter"))
 			((bool, onFracture,0,,"Flag for interactions that are associated with fractured cells. Used for extended smooth joint logic."))
 
@@ -84,6 +85,7 @@ class JCFpmPhys: public NormShearPhys {
 			((bool,firstMomentCalc,true,,"Flag for moment calculation"))
 			((Real,elapsedIter,0,,"number of elapsed iterations for moment calculation"))
 			((bool,momentCalculated,false,,"Flag for moment calculation"))
+			((bool,momentBroken,false,,"Flag for moment calculation"))
 			((int,nearbyFound,0,,"Count used to debug moment calc"))		
 			,
 			createIndex();

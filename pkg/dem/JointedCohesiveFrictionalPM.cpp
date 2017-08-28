@@ -61,9 +61,9 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	
 	phys->crackJointAperture = D<0? -D : 0.; // for DFNFlow
 	phys->separation = D; // track the separation between particles
-	if (!phys->isBroken) phys->strainEnergy = 0.5*((pow(phys->normalForce.norm(),2)/phys->kn) + (pow(phys->shearForce.norm(),2)/phys->ks));
+	if (!phys->momentBroken) phys->strainEnergy = 0.5*((pow(phys->normalForce.norm(),2)/phys->kn) + (pow(phys->shearForce.norm(),2)/phys->ks));
 
-	if (phys->isBroken && recordCracks && !phys->momentCalculated){
+	if (phys->momentBroken && recordCracks && !phys->momentCalculated){
 		computeMoment(phys, geom, b1, b2, contact);
 		if (phys->momentCalculated){
 			std::ofstream file (fileCracks.c_str(), !cracksFileExist ? std::ios::trunc : std::ios::app);
@@ -103,7 +103,7 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	    st2->tensBreak+=1;
 	    st1->tensBreakRel+=1.0/st1->noIniLinks;
 	    st2->tensBreakRel+=1.0/st2->noIniLinks;
-
+            phys->momentBroken = true;
 
             Real scalarNF=phys->normalForce.norm();
 	    Real scalarSF=phys->shearForce.norm();
@@ -129,7 +129,7 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	      phys->isBroken = true;
 	      return true; // do we need this? not sure -> yes, it ends the loop (avoid the following calculations)
 	    }
-            computeMoment(phys, geom, b1, b2, contact); // start the moment calculation (this will set the initial strain energy to be used for the strain energy change calculation 
+            if (recordCracks) computeMoment(phys, geom, b1, b2, contact); // start the moment calculation (this will set the initial strain energy to be used for the strain energy change calculation 
 // 	    return true; // do we need this? no
 	  }
 	}
@@ -183,7 +183,7 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	    st2->shearBreak+=1;
 	    st1->shearBreakRel+=1.0/st1->noIniLinks;
 	    st2->shearBreakRel+=1.0/st2->noIniLinks;
-
+            phys->momentBroken = true;
 	    Real scalarNF=phys->normalForce.norm();
 	    Real scalarSF=phys->shearForce.norm();
             totalShearCracksE+=0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) );
@@ -214,9 +214,9 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 		phys->normalForce = Vector3r::Zero();
 		return true; // do we need this? not sure -> yes, it ends the loop (avoid the following calculations)
 	      }
-            computeMoment(phys, geom, b1, b2, contact);  // start the moment calculation (this will set the initial strain energy to be used for the strain energy change calculation 
+
 	    }
-		
+           if(recordCracks) computeMoment(phys, geom, b1, b2, contact);  // start the moment calculation (this will set the initial strain energy to be used for the strain energy change calculation 		
 	
 // 	    return true; // do we need this one? no
 	  }
@@ -262,6 +262,7 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeMoment(JCFpmPhys*
 	//for (int j=0; j<nIntr; j++){
 	//	const shared_ptr<Interaction>& I = (*scene->interactions)[j];
 	//#else 
+	if(phys->firstMomentCalc){
 	FOREACH(const shared_ptr<Interaction>& I, *scene->interactions){
 	//#endif
 		const JCFpmPhys* nearbyPhys;
@@ -283,9 +284,20 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeMoment(JCFpmPhys*
 				
 				if (proximity < avgDiameter*momentRadiusFactor){
 					totalMomentStrainEnergy += nearbyPhys->strainEnergy;
-					//phys->nearbyFound += 1;					
+					phys->nearbyInts.push_back(I);
+					//cout << "nearbyInts set in vector" << endl;					
 				}
 			}
+		}
+	}
+	} else {
+		for (int i=0; i<phys->nearbyInts.size(); i++){
+			const JCFpmPhys* nearbyPhys;
+			if (!phys->nearbyInts[i] || !phys->nearbyInts[i]->geom.get() || !phys->nearbyInts[i]->phys.get()) continue;
+			nearbyPhys = YADE_CAST<JCFpmPhys*>(phys->nearbyInts[i]->phys.get());
+			if (!nearbyPhys) continue;
+			totalMomentStrainEnergy += nearbyPhys->strainEnergy;
+			//cout<< "nearbyInts indexed" << endl;
 		}
 	}
 
