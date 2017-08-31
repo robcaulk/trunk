@@ -73,7 +73,7 @@ class JCFpmPhys: public NormShearPhys {
 			((bool,isBroken,false,,"flag for broken interactions"))
 			((Real,crackJointAperture,0,,"Relative displacement between 2 spheres (in case of a crack it is equivalent of the crack aperture)"))
 			((Real,separation,0,,"displacement between 2 spheres"))
-			((vector<shared_ptr<Interaction>>,nearbyInts,,,"vector of pointers to the nearby ints used for moment calc"))
+			((vector<shared_ptr<Interaction> >,nearbyInts,,,"vector of pointers to the nearby ints used for moment calc"))
 			((int, breakType,2,,"Identifies the break.2 is not broken 0 is tensile 1 is shear (following cracks file nomenclature). Used in DFNFlow vtk writter"))
 			((bool, onFracture,0,,"Flag for interactions that are associated with fractured cells. Used for extended smooth joint logic."))
 
@@ -85,8 +85,16 @@ class JCFpmPhys: public NormShearPhys {
 			((bool,firstMomentCalc,true,,"Flag for moment calculation"))
 			((Real,elapsedIter,0,,"number of elapsed iterations for moment calculation"))
 			((bool,momentCalculated,false,,"Flag for moment calculation"))
+			((bool,checkedForCluster,false,,"Have we checked if this int belongs in cluster?"))
+			((bool,originalClusterEvent,false,,"the original AE event for a cluster"))
+			((bool,clusteredEvent,false,,"is this interaction part of a cluster?"))
 			((bool,momentBroken,false,,"Flag for moment calculation"))
-			((int,nearbyFound,0,,"Count used to debug moment calc"))		
+			((bool,interactionsAdded,false,,"have we added the ints associated with this event?"))
+			((int,nearbyFound,0,,"Count used to debug moment calc"))
+			((int,eventNumber,0,,"cluster event number"))
+			((Vector3r,momentCentroid,Vector3r::Zero(),,"centroid of the AE event (avg location of clustered breaks)"))
+			((vector<shared_ptr<Interaction> >,clusterInts,,,"vector of pointers to the broken interactions nearby constituting a cluster"))		
+			((shared_ptr<Interaction>,originalEvent,,,"pointer to the original interaction of a cluster"))	
 			,
 			createIndex();
 			,
@@ -128,13 +136,21 @@ class Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM: public LawFunctor{
 		virtual bool go(shared_ptr<IGeom>& _geom, shared_ptr<IPhys>& _phys, Interaction* I);
 		FUNCTOR2D(ScGeom,JCFpmPhys);
 		void orientJointNormal(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact);
-		void computeMoment(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact);
+//		void computeMoment(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact);
+		void checkForCluster(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact);
+		void clusterInteractions(JCFpmPhys* phys, Interaction* contact);
+		void computeClusteredMoment(JCFpmPhys* phys);
+		void computeCentroid(JCFpmPhys* phys);
+		void addUniqueIntsToList(JCFpmPhys* phys, JCFpmPhys* nearbyPhys);
 		YADE_CLASS_BASE_DOC_ATTRS(Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM,LawFunctor,"Interaction law for cohesive frictional material, e.g. rock, possibly presenting joint surfaces, that can be mechanically described with a smooth contact logic [Ivars2011]_ (implemented in Yade in [Scholtes2012]_). See examples/jointedCohesiveFrictionalPM for script examples. Joint surface definitions (through stl meshes or direct definition with gts module) are illustrated there.",
 			((string,Key,"",,"string specifying the name of saved file 'cracks___.txt', when :yref:`recordCracks<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.recordCracks>` is true."))
 			((bool,cracksFileExist,false,,"if true (and if :yref:`recordCracks<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.recordCracks>`), data are appended to an existing 'cracksKey' text file; otherwise its content is reset."))
+			((bool,momentsFileExist,false,,"if true (and if :yref:`recordCracks<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.recordCracks>`), data are appended to an existing 'cracksKey' text file; otherwise its content is reset."))
 			((bool,smoothJoint,false,,"if true, interactions of particles belonging to joint surface (:yref:`JCFpmPhys.isOnJoint`) are handled according to a smooth contact logic [Ivars2011]_, [Scholtes2012]_."))
 			((bool,recordCracks,false,,"if true, data about interactions that lose their cohesive feature are stored in a text file cracksKey.txt (see :yref:`Key<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.Key>` and :yref:`cracksFileExist<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.cracksFileExist>`). It contains 9 columns: the break iteration, the 3 coordinates of the contact point, the type (1 means shear break, while 0 corresponds to tensile break), the ''cross section'' (mean radius of the 2 spheres) and the 3 coordinates of the contact normal."))
 			((bool,neverErase,false,,"Keep interactions even if particles go away from each other (only in case another constitutive law is in the scene (e.g. should be used with DFNFlow)"))
+			((bool,clusterMoments,true,,"computer clustered moments?"))
+			((bool,computedCentroid,false,,"computer clustered moments?"))
 			((bool,extendSmoothJoint,false,,"New shear failures ahead of a hydraulically driven fracture tip behave according to smooth joint logic (experimental)"))
 			((Real,fracProximityFactor,8.,,"fracProximityFactor*avgIntractingRadius = max distance from fracture thatnew  shear failures will obey eSJM :yref:`eSJM<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.extendedSmoothJoint>` "))
 			((Real,momentRadiusFactor,5.,,"Average particle diameter multiplier for moment magnitude calculation"))
@@ -143,6 +159,7 @@ class Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM: public LawFunctor{
                         ((Real,totalShearCracksE,0.,,"calculate the overall energy dissipated by interparticle microcracking in shear."))
 			((int,nbTensCracks,0,,"number of tensile microcracks."))
                         ((int,nbShearCracks,0,,"number of shear microcracks."))
+			((int,eventNumber,0,,"cluster event number (used for clustering and paraview visualization of groups)."))
 		);
 		DECLARE_LOGGER;	
 };

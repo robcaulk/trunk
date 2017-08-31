@@ -347,6 +347,9 @@ void VTKRecorder::action(){
 	vtkSmartPointer<vtkDoubleArray> intrSeparation = vtkSmartPointer<vtkDoubleArray>::New();
 	intrSeparation->SetNumberOfComponents(1);
 	intrSeparation->SetName("separation");	
+	vtkSmartPointer<vtkDoubleArray> eventNumber = vtkSmartPointer<vtkDoubleArray>::New();
+	eventNumber->SetNumberOfComponents(1);
+	eventNumber->SetName("eventNumber");	
 	vtkSmartPointer<vtkDoubleArray> damageRel = vtkSmartPointer<vtkDoubleArray>::New();
 	damageRel->SetNumberOfComponents(1);
 	damageRel->SetName("damageRel");
@@ -501,6 +504,7 @@ void VTKRecorder::action(){
 				else if (recActive[REC_JCFPM]){
 					const JCFpmPhys* jcfpmphys = YADE_CAST<JCFpmPhys*>(I->phys.get());
 					intrSeparation->InsertNextValue(jcfpmphys->separation);
+					eventNumber->InsertNextValue(jcfpmphys->eventNumber);
 					intrIsCohesive->InsertNextValue(jcfpmphys->isCohesive);
 					intrIsOnJoint->InsertNextValue(jcfpmphys->isOnJoint);
 					intrForceN->InsertNextValue(fn);
@@ -977,6 +981,7 @@ void VTKRecorder::action(){
 			intrPd->GetCellData()->AddArray(intrIsCohesive);
 			intrPd->GetCellData()->AddArray(intrIsOnJoint);
 			intrPd->GetCellData()->AddArray(intrSeparation);
+			intrPd->GetCellData()->AddArray(eventNumber);
 		}
 		if (recActive[REC_WPM]){
 			intrPd->GetCellData()->AddArray(wpmNormalForce);
