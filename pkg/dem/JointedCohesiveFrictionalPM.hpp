@@ -7,6 +7,9 @@
 #include<pkg/common/NormShearPhys.hpp>
 #include<pkg/dem/ScGeom.hpp>
 #include <vector>
+#include <boost/thread/mutex.hpp>
+
+//boost::mutex nearbyInts_mutex;
 
 /** This class holds information associated with each body state*/
 class JCFpmState: public State {
@@ -73,7 +76,7 @@ class JCFpmPhys: public NormShearPhys {
 			((bool,isBroken,false,,"flag for broken interactions"))
 			((Real,crackJointAperture,0,,"Relative displacement between 2 spheres (in case of a crack it is equivalent of the crack aperture)"))
 			((Real,separation,0,,"displacement between 2 spheres"))
-			((vector<shared_ptr<Interaction> >,nearbyInts,,,"vector of pointers to the nearby ints used for moment calc"))
+			((vector<Interaction*>,nearbyInts,,,"vector of pointers to the nearby ints used for moment calc"))
 			((int, breakType,2,,"Identifies the break.2 is not broken 0 is tensile 1 is shear (following cracks file nomenclature). Used in DFNFlow vtk writter"))
 			((bool, onFracture,0,,"Flag for interactions that are associated with fractured cells. Used for extended smooth joint logic."))
 
@@ -93,8 +96,8 @@ class JCFpmPhys: public NormShearPhys {
 			((int,nearbyFound,0,,"Count used to debug moment calc"))
 			((int,eventNumber,0,,"cluster event number"))
 			((Vector3r,momentCentroid,Vector3r::Zero(),,"centroid of the AE event (avg location of clustered breaks)"))
-			((vector<shared_ptr<Interaction> >,clusterInts,,,"vector of pointers to the broken interactions nearby constituting a cluster"))		
-			((shared_ptr<Interaction>,originalEvent,,,"pointer to the original interaction of a cluster"))	
+			((vector<Interaction*>,clusterInts,,,"vector of pointers to the broken interactions nearby constituting a cluster"))		
+			((Interaction*,originalEvent,,,"pointer to the original interaction of a cluster"))	
 			,
 			createIndex();
 			,
@@ -150,10 +153,13 @@ class Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM: public LawFunctor{
 			((bool,recordCracks,false,,"if true, data about interactions that lose their cohesive feature are stored in a text file cracksKey.txt (see :yref:`Key<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.Key>` and :yref:`cracksFileExist<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.cracksFileExist>`). It contains 9 columns: the break iteration, the 3 coordinates of the contact point, the type (1 means shear break, while 0 corresponds to tensile break), the ''cross section'' (mean radius of the 2 spheres) and the 3 coordinates of the contact normal."))
 			((bool,neverErase,false,,"Keep interactions even if particles go away from each other (only in case another constitutive law is in the scene (e.g. should be used with DFNFlow)"))
 			((bool,clusterMoments,true,,"computer clustered moments?"))
+			((bool,recordMoments,false,,"record clustered moments?"))
+		//	((boost::mutex,nearbyInts_mutex,,,"mutex used for guarding the collection of ints during multithreading"))
 			((bool,computedCentroid,false,,"computer clustered moments?"))
 			((bool,extendSmoothJoint,false,,"New shear failures ahead of a hydraulically driven fracture tip behave according to smooth joint logic (experimental)"))
 			((Real,fracProximityFactor,8.,,"fracProximityFactor*avgIntractingRadius = max distance from fracture thatnew  shear failures will obey eSJM :yref:`eSJM<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.extendedSmoothJoint>` "))
 			((Real,momentRadiusFactor,5.,,"Average particle diameter multiplier for moment magnitude calculation"))
+			((Real,momentStrainFudgeFactor,1.,,"Fudge factor used by Hazzard and Damjanac 2013 to improve moment size accuracy (set to 1 by default)"))
 			((Real,elapsedIterFactor,20,,"Factor multiplied by particle diameter to yield allowable iterations"))
 			((Real,totalTensCracksE,0.,,"calculate the overall energy dissipated by interparticle microcracking in tension."))
                         ((Real,totalShearCracksE,0.,,"calculate the overall energy dissipated by interparticle microcracking in shear."))

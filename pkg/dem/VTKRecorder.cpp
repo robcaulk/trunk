@@ -84,11 +84,12 @@ void VTKRecorder::action(){
 		else if(rec=="force") recActive[REC_FORCE]=true;
 		else if(rec=="jcfpm") recActive[REC_JCFPM]=true;
 		else if(rec=="cracks") recActive[REC_CRACKS]=true;
+		else if(rec=="moments") recActive[REC_MOMENTS]=true;
 		else if(rec=="pericell" && scene->isPeriodic) recActive[REC_PERICELL]=true;
 		else if(rec=="liquidcontrol") recActive[REC_LIQ]=true;
 		else if(rec=="bstresses") recActive[REC_BSTRESS]=true;
 		else if(rec=="coordNumber") recActive[REC_COORDNUMBER]=true;
-		else LOG_ERROR("Unknown recorder named `"<<rec<<"' (supported are: all, spheres, velocity, facets, boxes, color, stress, cpm, wpm, intr, id, clumpId, materialId, jcfpm, cracks, pericell, liquidcontrol, bstresses). Ignored.");
+		else LOG_ERROR("Unknown recorder named `"<<rec<<"' (supported are: all, spheres, velocity, facets, boxes, color, stress, cpm, wpm, intr, id, clumpId, materialId, jcfpm, cracks, moments, pericell, liquidcontrol, bstresses). Ignored.");
 	}
 	// cpm needs interactions
 	if(recActive[REC_CPM]) recActive[REC_INTR]=true;
@@ -384,7 +385,23 @@ void VTKRecorder::action(){
 	vtkSmartPointer<vtkDoubleArray> crackMoment = vtkSmartPointer<vtkDoubleArray>::New();
 	crackMoment->SetNumberOfComponents(1);
 	crackMoment->SetName("moment");
-	
+
+	// extras for moments
+	vtkSmartPointer<vtkPoints> momentPos = vtkSmartPointer<vtkPoints>::New();
+	vtkSmartPointer<vtkCellArray> momentCells = vtkSmartPointer<vtkCellArray>::New();
+	vtkSmartPointer<vtkDoubleArray> momentiter = vtkSmartPointer<vtkDoubleArray>::New();
+	momentiter->SetNumberOfComponents(1);
+	momentiter->SetName("momentiter");
+	vtkSmartPointer<vtkDoubleArray> momentSize = vtkSmartPointer<vtkDoubleArray>::New();
+	momentSize->SetNumberOfComponents(1);
+	momentSize->SetName("momentSize");
+	vtkSmartPointer<vtkDoubleArray> momentEventNum = vtkSmartPointer<vtkDoubleArray>::New();
+	momentEventNum->SetNumberOfComponents(1);
+	momentEventNum->SetName("momentEventNum");
+	vtkSmartPointer<vtkDoubleArray> momentNumInts = vtkSmartPointer<vtkDoubleArray>::New();
+	momentNumInts->SetNumberOfComponents(1);
+	momentNumInts->SetName("momentNumInts");
+
 #ifdef YADE_LIQMIGRATION
 	vtkSmartPointer<vtkDoubleArray> liqVol = vtkSmartPointer<vtkDoubleArray>::New();
 	liqVol->SetNumberOfComponents(1);
@@ -1072,6 +1089,49 @@ void VTKRecorder::action(){
 			writer->SetInputData(crackUg);
 		#else
 			writer->SetInput(crackUg);
+		#endif
+		writer->Write(); }
+
+// doing same thing for moments that we did for cracks:
+	if (recActive[REC_MOMENTS]) {
+		string fileMoments = "moments_"+Key+".txt";
+		std::ifstream file (fileMoments.c_str(),std::ios::in);
+		vtkSmartPointer<vtkUnstructuredGrid> momentUg = vtkSmartPointer<vtkUnstructuredGrid>::New();
+		
+		if(file){
+			 while ( !file.eof() ){
+				std::string line;
+				Real i, p0, p1, p2, moment, numInts, eventNum;
+				while ( std::getline(file, line)) {/* writes into string "line", a line of file "file". To go along diff. lines*/
+					file >> i >> p0 >> p1 >> p2 >> moment >> numInts >> eventNum;
+					vtkIdType pid[1];
+					pid[0] = momentPos->InsertNextPoint(p0, p1, p2);
+					momentCells->InsertNextCell(1,pid);
+					momentSize->InsertNextValue(moment);
+					momentiter->InsertNextValue(i);
+					momentNumInts->InsertNextValue(numInts);
+					momentEventNum->InsertNextValue(eventNum);
+				}
+			}
+			 file.close();
+		}
+// 
+		momentUg->SetPoints(momentPos);
+		momentUg->SetCells(VTK_VERTEX, momentCells);
+		momentUg->GetPointData()->AddArray(momentiter);
+		momentUg->GetPointData()->AddArray(momentSize);
+		momentUg->GetPointData()->AddArray(momentNumInts);
+		momentUg->GetPointData()->AddArray(momentEventNum);
+
+		vtkSmartPointer<vtkXMLUnstructuredGridWriter> writer = vtkSmartPointer<vtkXMLUnstructuredGridWriter>::New();
+		if(compress) writer->SetCompressor(compressor);
+		if(ascii) writer->SetDataModeToAscii();
+		string fn=fileName+"moments."+boost::lexical_cast<string>(scene->iter)+".vtu";
+		writer->SetFileName(fn.c_str());
+		#ifdef YADE_VTK6
+			writer->SetInputData(momentUg);
+		#else
+			writer->SetInput(momentUg);
 		#endif
 		writer->Write(); }
 
