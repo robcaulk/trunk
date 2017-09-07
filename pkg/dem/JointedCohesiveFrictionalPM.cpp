@@ -67,32 +67,14 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	phys->separation = D; // track the separation between particles
 	if (!phys->momentBroken) phys->strainEnergy = 0.5*((pow(phys->normalForce.norm(),2)/phys->kn) + (pow(phys->shearForce.norm(),2)/phys->ks));
 
-
-// for non clustered events:
-//	if (phys->momentBroken && recordCracks && !phys->momentCalculated && !clusterMoments){
-//		computeMoment(phys, geom, b1, b2, contact);
-//		if (phys->momentCalculated){
-//			std::ofstream file (fileCracks.c_str(), !cracksFileExist ? std::ios::trunc : std::ios::app);
-//			if(file.tellp()==0){ file <<"i p0 p1 p2 t s norm0 norm1 norm2 onFrac nrg moment"<<endl; }
-//			Vector3r crackNormal=Vector3r::Zero();
-//			if ((smoothJoint) && (phys->isOnJoint)) { crackNormal=phys->jointNormal; } else {crackNormal=geom->normal;}
-//			file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( geom->contactPoint[0] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[1] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[2] ) <<" "<< boost::lexical_cast<string>( phys->breakType ) <<" "<< boost::lexical_cast<string> ( 0.5*(geom->radius1+geom->radius2) ) <<" "<< boost::lexical_cast<string> ( crackNormal[0] ) <<" "<< boost::lexical_cast<string> ( crackNormal[1] ) <<" "<< boost::lexical_cast<string> ( crackNormal[2] ) << " " << boost::lexical_cast<string> ( phys->onFracture) << " " << boost::lexical_cast<string> ( phys->strainEnergy ) << " " <<  boost::lexical_cast<string> ( phys->momentMagnitude ) << endl;
-//			cracksFileExist=true;
-//		}
-//		
-//	}
-
 //for clustered events:
-	if (phys->momentBroken && recordMoments && !phys->momentCalculated && clusterMoments){
-		//computeClusteredMoment(phys, geom, b1, b2, contact);
-
-		if (!phys->checkedForCluster) checkForCluster(phys, geom, b1, b2, contact);
-		if (!phys->interactionsAdded) clusterInteractions(phys, contact);
-		if (!computedCentroid) computeCentroid(phys);
+	if (phys->momentBroken && recordMoments && !phys->momentCalculated){
+		//if (!phys->checkedForCluster) checkForCluster(phys, geom, b1, b2, contact);
+		//if (!phys->interactionsAdded) clusterInteractions(phys, contact);
+		if (phys->originalClusterEvent && !phys->computedCentroid) computeCentroid(phys);
 		if (phys->originalClusterEvent) computeClusteredMoment(phys);
 		
 		if (phys->momentCalculated){
-			//cout << "numInts " << numInts;
 			std::ofstream file (fileMoments.c_str(), !momentsFileExist ? std::ios::trunc : std::ios::app);
 			if(file.tellp()==0){ file <<"i p0 p1 p2 moment numInts eventNum"<<endl; }
 			file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( phys->momentCentroid[0] ) <<" "<< boost::lexical_cast<string> ( phys->momentCentroid[1] ) <<" "<< boost::lexical_cast<string> ( phys->momentCentroid[2] ) <<" "<< boost::lexical_cast<string> ( phys->momentMagnitude ) << " " << boost::lexical_cast<string> ( phys->clusterInts.size() ) << " " << boost::lexical_cast<string> ( phys->eventNumber ) << endl;
@@ -155,8 +137,12 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	      phys->isBroken = true;
 	      return true; // do we need this? not sure -> yes, it ends the loop (avoid the following calculations)
 	    }
-//            if (recordCracks) computeMoment(phys, geom, b1, b2, contact); // start the moment calculation (this will set the initial strain energy to be used for the strain energy change calculation 
-// 	    return true; // do we need this? no
+
+            if (recordMoments && !phys->momentCalculated){
+                checkForCluster(phys, geom, b1, b2, contact);
+		clusterInteractions(phys, contact);
+            }
+
 	  }
 	}
 	
@@ -242,9 +228,10 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	      }
 
 	    }
- //          if(recordCracks) computeMoment(phys, geom, b1, b2, contact);  // start the moment calculation (this will set the initial strain energy to be used for the strain energy change calculation 		
-	
-// 	    return true; // do we need this one? no
+            if (recordMoments && !phys->momentCalculated){
+                checkForCluster(phys, geom, b1, b2, contact);
+		clusterInteractions(phys, contact);
+            }
 	  }
 	}
 
@@ -267,7 +254,9 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	return true;
 	
 }
-	
+
+
+// function used to parse through new interactions and only add unique ints to cluster list	
 void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::addUniqueIntsToList(JCFpmPhys* phys, JCFpmPhys* nearbyPhys){
 	unsigned int size = phys->nearbyInts.size();
 	for (unsigned int i=0; i<nearbyPhys->nearbyInts.size(); i++){
@@ -290,6 +279,8 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::addUniqueIntsToList(JCFp
 	}
 }
 
+
+// function used to check if the newly broken bond belongs in a cluster or not, if so attach to proper cluster and set appropriate flags
 void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::checkForCluster(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact){
 
 	const shared_ptr<Shape>& sphere1 = b1->shape;
@@ -317,11 +308,11 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::checkForCluster(JCFpmPhy
 				
 				// this logic is finding interactions within a radius of the broken one, and identifiying if it is an original event of if it belongs in a cluster
 				if (proximity < avgDiameter*momentRadiusFactor && proximity != 0){
-					if (nearbyPhys->originalClusterEvent && !nearbyPhys->momentCalculated && !phys->clusteredEvent) {
+					if (nearbyPhys->originalClusterEvent && !nearbyPhys->momentCalculated && !phys->clusteredEvent && clusterMoments) {
 						phys->eventNumber = nearbyPhys->eventNumber; 
 						phys->clusteredEvent = true;
 						phys->originalEvent = I.get();
-					} else if (nearbyPhys->clusteredEvent && !phys->clusteredEvent /*&& !nearbyPhys->momentCalculated*/){
+					} else if (nearbyPhys->clusteredEvent && !phys->clusteredEvent && clusterMoments){
 						JCFpmPhys* originalPhys = YADE_CAST<JCFpmPhys*>(nearbyPhys->originalEvent->phys.get());
 						if (!originalPhys->momentCalculated){
 							phys->eventNumber = nearbyPhys->eventNumber;
@@ -345,7 +336,7 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::checkForCluster(JCFpmPhy
 	phys->checkedForCluster = true;
 }
 
-
+// function used for clustering broken bonds and nearby interactions
 void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::clusterInteractions(JCFpmPhys* phys, Interaction* contact){
 	JCFpmPhys* originalPhys = YADE_CAST<JCFpmPhys*>(phys->originalEvent->phys.get());
 	addUniqueIntsToList(originalPhys, phys);  //NEED TO PUSHBACK ONLY UNIQUE INTS. we don't want a list with duplicate events (also updates reference strain)
@@ -353,11 +344,13 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::clusterInteractions(JCFp
 	originalPhys->elapsedIter = 1;  // reset the temporal window? do we want this?
 	//originalPhys->firstMomentCalc=true; // do we need a new reference strain energy for the calculation of strain energy change?
 	phys->momentMagnitude = 0; // dirty way to avoid recording these clustered events twice? maybe dont need this if proper recording is applied
-	computedCentroid=false;  // set flag to compute a new centroid since we added more ints
+	originalPhys->computedCentroid=false;  // set flag to compute a new centroid since we added more ints
 	boost::mutex::scoped_lock lock(clusterInts_mutex);
 	originalPhys->clusterInts.push_back(contact);  // add this broken interaction to list of broken bonds in this event
 } 
 
+
+// function cycles through the list of interactions associated with a cluster and computes moment
 void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeClusteredMoment(JCFpmPhys* phys){
 	Real totalMomentStrainEnergy = 0;
 	Real momentStrainEnergyChange = 0;
@@ -385,6 +378,8 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeClusteredMoment(J
 					
 }
 
+
+// function computes the centroid of a cluster
 void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeCentroid(JCFpmPhys* phys){
 	JCFpmPhys* originalPhys = YADE_CAST<JCFpmPhys*>(phys->originalEvent->phys.get());
 	Vector3r summedLocations = Vector3r::Zero();
@@ -398,7 +393,7 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeCentroid(JCFpmPhy
 		}
 	}
 	originalPhys->momentCentroid = summedLocations/originalPhys->clusterInts.size(); // new location of event is average of all clustered events
-	computedCentroid = true;
+	originalPhys->computedCentroid = true;
 	
 }
 
@@ -483,6 +478,7 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeCentroid(JCFpmPhy
 //					
 //}
 
+// function used for extending smooth joint to newly broken interactions (function works, but results are mixed)
 void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::orientJointNormal(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact){
 		
 		const shared_ptr<Shape>& sphere1 = b1->shape;
