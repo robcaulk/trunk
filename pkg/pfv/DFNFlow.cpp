@@ -432,7 +432,7 @@ void DFNFlowEngine::trickPermeability(Solver* flow)
 // 				Real residualAperture = jointResidual;
 // 				cout<<"residual aperture = " << residualAperture <<endl;
 				
-				if (!jcfpmphys->isOnJoint && jcfpmphys->crackJointAperture<=0) continue; // avoid trick permeability for closed induced crack (permeability=matrix permeability)
+				if (!jcfpmphys->isOnJoint && jcfpmphys->crackJointAperture<=0 && !trickClosedCracks) continue; // avoid trick permeability for closed induced crack (permeability=matrix permeability)
 				
 				Real aperture = jcfpmphys->crackJointAperture;
 				Real fracturePerm = pow((aperture+residualAperture),3)/(12*viscosity);

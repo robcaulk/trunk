@@ -12,6 +12,9 @@ YADE_PLUGIN((JCFpmMat)(JCFpmState)(JCFpmPhys)(Ip2_JCFpmMat_JCFpmMat_JCFpmPhys)(L
 /********************** Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM ****************************/
 CREATE_LOGGER(Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM);
 
+static boost::mutex nearbyInts_mutex;
+static boost::mutex clusterInts_mutex;
+
 bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig, shared_ptr<IPhys>& ip, Interaction* contact){
 
 	const int &id1 = contact->getId1();
@@ -25,6 +28,7 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	Real Dtensile=phys->FnMax/phys->kn;
 	
 	string fileCracks = "cracks_"+Key+".txt";
+	string fileMoments = "moments_"+Key+".txt";
 	/// Defines the interparticular distance used for computation
 	Real D = 0;
 
@@ -61,6 +65,23 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	
 	phys->crackJointAperture = D<0? -D : 0.; // for DFNFlow
 	phys->separation = D; // track the separation between particles
+	if (!phys->momentBroken) phys->strainEnergy = 0.5*((pow(phys->normalForce.norm(),2)/phys->kn) + (pow(phys->shearForce.norm(),2)/phys->ks));
+
+//for clustered events:
+	if (phys->momentBroken && recordMoments && !phys->momentCalculated){
+		//if (!phys->checkedForCluster) checkForCluster(phys, geom, b1, b2, contact);
+		//if (!phys->interactionsAdded) clusterInteractions(phys, contact);
+		if (phys->originalClusterEvent && !phys->computedCentroid) computeCentroid(phys);
+		if (phys->originalClusterEvent) computeClusteredMoment(phys);
+		
+		if (phys->momentCalculated){
+			std::ofstream file (fileMoments.c_str(), !momentsFileExist ? std::ios::trunc : std::ios::app);
+			if(file.tellp()==0){ file <<"i p0 p1 p2 moment numInts eventNum"<<endl; }
+			file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( phys->momentCentroid[0] ) <<" "<< boost::lexical_cast<string> ( phys->momentCentroid[1] ) <<" "<< boost::lexical_cast<string> ( phys->momentCentroid[2] ) <<" "<< boost::lexical_cast<string> ( phys->momentMagnitude ) << " " << boost::lexical_cast<string> ( phys->clusterInts.size() ) << " " << boost::lexical_cast<string> ( phys->eventNumber ) << endl;
+			momentsFileExist=true;
+		}
+		
+	}
 
 	/* Determination of interaction */
 	if (D < 0) { //spheres do not touch 
@@ -89,7 +110,7 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	    st2->tensBreak+=1;
 	    st1->tensBreakRel+=1.0/st1->noIniLinks;
 	    st2->tensBreakRel+=1.0/st2->noIniLinks;
-
+            phys->momentBroken = true;
 
             Real scalarNF=phys->normalForce.norm();
 	    Real scalarSF=phys->shearForce.norm();
@@ -102,8 +123,9 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	      Vector3r crackNormal=Vector3r::Zero();
 	      if ((smoothJoint) && (phys->isOnJoint)) { crackNormal=phys->jointNormal; } else {crackNormal=geom->normal;}
 	      file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( geom->contactPoint[0] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[1] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[2] ) <<" "<< 0 <<" "<< boost::lexical_cast<string> ( 0.5*(geom->radius1+geom->radius2) ) <<" "<< boost::lexical_cast<string> ( crackNormal[0] ) <<" "<< boost::lexical_cast<string> ( crackNormal[1] ) <<" "<< boost::lexical_cast<string> ( crackNormal[2] ) << " " << boost::lexical_cast<string> ( phys->onFracture) << " " <<boost::lexical_cast<string> ( 0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) ) ) << endl;
-	    }
-	    cracksFileExist=true;
+	    
+            }
+            cracksFileExist=true;
 	    /// Timos
 	    if (!neverErase) return false; 
 	    else {
@@ -115,7 +137,12 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	      phys->isBroken = true;
 	      return true; // do we need this? not sure -> yes, it ends the loop (avoid the following calculations)
 	    }
-// 	    return true; // do we need this? no
+
+            if (recordMoments && !phys->momentCalculated){
+                checkForCluster(phys, geom, b1, b2, contact);
+		clusterInteractions(phys, contact);
+            }
+
 	  }
 	}
 	
@@ -168,7 +195,7 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	    st2->shearBreak+=1;
 	    st1->shearBreakRel+=1.0/st1->noIniLinks;
 	    st2->shearBreakRel+=1.0/st2->noIniLinks;
-
+            phys->momentBroken = true;
 	    Real scalarNF=phys->normalForce.norm();
 	    Real scalarSF=phys->shearForce.norm();
             totalShearCracksE+=0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) );
@@ -182,9 +209,9 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	      Vector3r crackNormal=Vector3r::Zero();
 	      if ((smoothJoint) && (phys->isOnJoint)) { crackNormal=phys->jointNormal; } else {crackNormal=geom->normal;}
 	      file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( geom->contactPoint[0] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[1] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[2] ) <<" "<< 1 <<" "<< boost::lexical_cast<string> ( 0.5*(geom->radius1+geom->radius2) ) <<" "<< boost::lexical_cast<string> ( crackNormal[0] ) <<" "<< boost::lexical_cast<string> ( crackNormal[1] ) <<" "<< boost::lexical_cast<string> ( crackNormal[2] ) << " " << boost::lexical_cast<string> ( phys->onFracture) << " " <<boost::lexical_cast<string> ( 0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) ) ) << endl;
-	    }
+	    	    
+            }
 	    cracksFileExist=true;
-	    
 	    // set the contact properties to friction if in compression, delete contact if in tension
 	    phys->isBroken = true;
 	    phys->isCohesive = 0;
@@ -199,10 +226,12 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 		phys->normalForce = Vector3r::Zero();
 		return true; // do we need this? not sure -> yes, it ends the loop (avoid the following calculations)
 	      }
+
 	    }
-		
-	
-// 	    return true; // do we need this one? no
+            if (recordMoments && !phys->momentCalculated){
+                checkForCluster(phys, geom, b1, b2, contact);
+		clusterInteractions(phys, contact);
+            }
 	  }
 	}
 
@@ -227,7 +256,229 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 }
 
 
+// function used to parse through new interactions and only add unique ints to cluster list	
+void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::addUniqueIntsToList(JCFpmPhys* phys, JCFpmPhys* nearbyPhys){
+	unsigned int size = phys->nearbyInts.size();
+	for (unsigned int i=0; i<nearbyPhys->nearbyInts.size(); i++){
+		if (!nearbyPhys->nearbyInts[i]) continue;
+		bool pushBack = true;
+		for (unsigned int j=0; j<size; j++){
+			if (!phys->nearbyInts[j]) continue;
+			if (phys->nearbyInts[j] == nearbyPhys->nearbyInts[i]) {
+				pushBack = false;
+				break;
+			}
+		}
+		boost::mutex::scoped_lock lock(nearbyInts_mutex);
+		if (pushBack && nearbyPhys->nearbyInts[i]){
+			phys->nearbyInts.push_back(nearbyPhys->nearbyInts[i]);
+			JCFpmPhys* strainPhys = YADE_CAST<JCFpmPhys*> (nearbyPhys->nearbyInts[i]->phys.get()); 
+			phys->momentStrainEnergy += strainPhys->strainEnergy;  // while we are here we update the reference strain by adding the strain of the newly added ints
+		}
+			
+	}
+}
 
+
+// function used to check if the newly broken bond belongs in a cluster or not, if so attach to proper cluster and set appropriate flags
+void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::checkForCluster(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact){
+
+	const shared_ptr<Shape>& sphere1 = b1->shape;
+	const shared_ptr<Shape>& sphere2 = b2->shape;
+	const Real sphereRadius1 = static_cast<Sphere*>(sphere1.get())->radius;
+	const Real sphereRadius2 = static_cast<Sphere*>(sphere2.get())->radius;
+	const Real avgDiameter = (sphereRadius1+sphereRadius2);
+	Vector3r& brokenInteractionLocation = geom->contactPoint;
+	phys->nearbyFound=0;
+
+	FOREACH(const shared_ptr<Interaction>& I, *scene->interactions){
+	//#endif
+		JCFpmPhys* nearbyPhys;
+		const ScGeom* nearbyGeom;
+		if (!I || !I->geom.get() || !I->phys.get()) continue;
+		if (I && I->isReal() && JCFpmPhys::getClassIndexStatic()==I->phys->getClassIndex()){
+			nearbyPhys = YADE_CAST<JCFpmPhys*>(I->phys.get());
+			if (!nearbyPhys) continue;
+			if (I->geom.get() /*&& !nearbyPhys->momentBroken*/){
+				nearbyGeom = YADE_CAST<ScGeom*> (I->geom.get());
+                    		if (!nearbyGeom) continue;
+				Vector3r nearbyInteractionLocation = nearbyGeom->contactPoint;
+				Vector3r proximityVector = nearbyInteractionLocation-brokenInteractionLocation;
+				Real proximity = proximityVector.norm();
+				
+				// this logic is finding interactions within a radius of the broken one, and identifiying if it is an original event of if it belongs in a cluster
+				if (proximity < avgDiameter*momentRadiusFactor && proximity != 0){
+					if (nearbyPhys->originalClusterEvent && !nearbyPhys->momentCalculated && !phys->clusteredEvent && clusterMoments) {
+						phys->eventNumber = nearbyPhys->eventNumber; 
+						phys->clusteredEvent = true;
+						phys->originalEvent = I.get();
+					} else if (nearbyPhys->clusteredEvent && !phys->clusteredEvent && clusterMoments){
+						JCFpmPhys* originalPhys = YADE_CAST<JCFpmPhys*>(nearbyPhys->originalEvent->phys.get());
+						if (!originalPhys->momentCalculated){
+							phys->eventNumber = nearbyPhys->eventNumber;
+							phys->clusteredEvent = true;
+							phys->originalEvent = nearbyPhys->originalEvent;
+						}
+					} 
+
+					if (nearbyPhys->momentBroken) continue;
+					phys->nearbyInts.push_back(I.get());
+				}
+			}
+		}
+	}
+	if (!phys->clusteredEvent) {
+		phys->originalClusterEvent = true; // if not clustered, its an original event. We use this interaction as the master for the cluster. Its list of nearbyInts will expand if other ints break nearby. 
+		phys->originalEvent = contact;
+		eventNumber += 1;
+		phys->eventNumber = eventNumber;
+	}
+	phys->checkedForCluster = true;
+}
+
+// function used for clustering broken bonds and nearby interactions
+void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::clusterInteractions(JCFpmPhys* phys, Interaction* contact){
+	JCFpmPhys* originalPhys = YADE_CAST<JCFpmPhys*>(phys->originalEvent->phys.get());
+	addUniqueIntsToList(originalPhys, phys);  //NEED TO PUSHBACK ONLY UNIQUE INTS. we don't want a list with duplicate events (also updates reference strain)
+	phys->interactionsAdded = true;
+	originalPhys->elapsedIter = 1;  // reset the temporal window? do we want this?
+	//originalPhys->firstMomentCalc=true; // do we need a new reference strain energy for the calculation of strain energy change?
+	phys->momentMagnitude = 0; // dirty way to avoid recording these clustered events twice? maybe dont need this if proper recording is applied
+	originalPhys->computedCentroid=false;  // set flag to compute a new centroid since we added more ints
+	boost::mutex::scoped_lock lock(clusterInts_mutex);
+	originalPhys->clusterInts.push_back(contact);  // add this broken interaction to list of broken bonds in this event
+} 
+
+
+// function cycles through the list of interactions associated with a cluster and computes moment
+void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeClusteredMoment(JCFpmPhys* phys){
+	Real totalMomentStrainEnergy = 0;
+	Real momentStrainEnergyChange = 0;
+	for (unsigned int i=0; i<phys->nearbyInts.size(); i++){
+		const JCFpmPhys* nearbyPhys;
+		if (!phys->nearbyInts[i] || !phys->nearbyInts[i]->geom.get() || !phys->nearbyInts[i]->phys.get()) continue;
+		nearbyPhys = YADE_CAST<JCFpmPhys*>(phys->nearbyInts[i]->phys.get());
+		if (!nearbyPhys) continue;
+		totalMomentStrainEnergy += nearbyPhys->strainEnergy;
+	}
+	if(phys->firstMomentCalc){
+		phys->momentStrainEnergy = totalMomentStrainEnergy;
+		phys->firstMomentCalc = false;
+	}
+	momentStrainEnergyChange = totalMomentStrainEnergy - phys->momentStrainEnergy;
+	phys->elapsedIter += 1;
+	if (momentStrainEnergyChange > phys->momentStrainEnergyChange) phys->momentStrainEnergyChange = momentStrainEnergyChange;
+	if (phys->elapsedIter >= elapsedIterFactor*momentRadiusFactor){ // the elapsed time should reflect 20*particlediameters radius Hazzard and Damjanac 2013
+		phys->momentCalculated=true;
+		phys->originalClusterEvent=false; // this event no longer exists, so we need to allow other new events to occur nearby.    
+		//cout << "MomentEnergyChange" << momentStrainEnergyChance << endl;
+		if(phys->momentStrainEnergyChange!=0) phys->momentMagnitude = (2./3.)*log(phys->momentStrainEnergyChange*momentStrainFudgeFactor)-3.2;  //empirical equation for energy magnitude (Hazzard and Damjanac 2013) 
+		//if(phys->momentStrainEnergyChange==0) cout<<"avgDiameter " << avgDiameter << " found nearby interaciton? " << phys->nearbyFound << "over " << phys->elapsedIter << " iterations" <<endl;  // debugging. It appears some strain energy searches yield decreases of strain energy in neighbor hood. We are handling these by assining a 0 magnitude...but that seems wrong. Turns out these are just very very small events. There is actually no change of strain around them. Due to weibull dist int areas?
+	}
+					
+}
+
+
+// function computes the centroid of a cluster
+void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeCentroid(JCFpmPhys* phys){
+	JCFpmPhys* originalPhys = YADE_CAST<JCFpmPhys*>(phys->originalEvent->phys.get());
+	Vector3r summedLocations = Vector3r::Zero();
+	for (unsigned int i=0; i<originalPhys->clusterInts.size(); i++){
+		ScGeom* nearbyGeom;
+		if (!originalPhys->clusterInts[i]) continue;
+		if (originalPhys->clusterInts[i]->geom.get()){
+			nearbyGeom = YADE_CAST<ScGeom*> (originalPhys->clusterInts[i]->geom.get());
+			Vector3r nearbyInteractionLocation = nearbyGeom->contactPoint;
+			summedLocations += nearbyInteractionLocation;
+		}
+	}
+	originalPhys->momentCentroid = summedLocations/originalPhys->clusterInts.size(); // new location of event is average of all clustered events
+	originalPhys->computedCentroid = true;
+	
+}
+
+// function for computing moments based on single breaks
+//void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeMoment(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact){
+
+//	const shared_ptr<Shape>& sphere1 = b1->shape;
+//	const shared_ptr<Shape>& sphere2 = b2->shape;
+//	const Real sphereRadius1 = static_cast<Sphere*>(sphere1.get())->radius;
+//	const Real sphereRadius2 = static_cast<Sphere*>(sphere2.get())->radius;
+//	const Real avgDiameter = (sphereRadius1+sphereRadius2);
+//	Vector3r& brokenInteractionLocation = geom->contactPoint;
+//	Real totalMomentStrainEnergy = 0;
+//	Real momentStrainEnergyChange = 0;
+//	phys->nearbyFound=0;
+//	
+
+//	// search through all interactions to find nearby interactions for energy calc
+//	//#ifdef YADE_OPENMP
+//	//int nIntr=(int)scene->interactions->size();
+//	//#pragma omp parallel for
+//	//for (int j=0; j<nIntr; j++){
+//	//	const shared_ptr<Interaction>& I = (*scene->interactions)[j];
+//	//#else 
+//	if(phys->firstMomentCalc){
+//	FOREACH(const shared_ptr<Interaction>& I, *scene->interactions){
+//	//#endif
+//		const JCFpmPhys* nearbyPhys;
+//		const ScGeom* nearbyGeom;
+//		if (!I || !I->geom.get() || !I->phys.get()) continue;
+//		if (I && I->isReal() && JCFpmPhys::getClassIndexStatic()==I->phys->getClassIndex()){
+//			nearbyPhys = YADE_CAST<JCFpmPhys*>(I->phys.get());
+//			if (!nearbyPhys) continue;
+//			if (I->geom.get() && !nearbyPhys->momentBroken){		//nearbyPhys->isOnJoint && && !nearbyPhys->onFracture	
+//				nearbyGeom = YADE_CAST<ScGeom*> (I->geom.get());
+//				//cout<<"nearbyPGeom declared"<<endl;
+//                    		if (!nearbyGeom) continue;
+//				Vector3r nearbyInteractionLocation = nearbyGeom->contactPoint;
+//				//cout<<"nearbyInteraction location"<< nearbyInteractionLocation << endl;
+//				Vector3r proximityVector = nearbyInteractionLocation-brokenInteractionLocation;
+//				Real proximity = proximityVector.norm();
+//				//cout<<"proximity computed"<< proximity << endl;
+//				//cout << "allowable radius" << avgDiameter*momentRadiusFactor << endl;
+//				
+//				if (proximity < avgDiameter*momentRadiusFactor && proximity != 0){
+//					totalMomentStrainEnergy += nearbyPhys->strainEnergy;
+//					phys->nearbyInts.push_back(I);
+//					//cout << "nearbyInts set in vector" << endl;					
+//				}
+//			}
+//		}
+//	}
+//	} else {
+//		for (unsigned int i=0; i<phys->nearbyInts.size(); i++){
+//			const JCFpmPhys* nearbyPhys;
+//			if (!phys->nearbyInts[i] || !phys->nearbyInts[i]->geom.get() || !phys->nearbyInts[i]->phys.get()) continue;
+//			nearbyPhys = YADE_CAST<JCFpmPhys*>(phys->nearbyInts[i]->phys.get());
+//			if (!nearbyPhys) continue; 
+//			totalMomentStrainEnergy += nearbyPhys->strainEnergy;
+//			//cout<< "nearbyInts indexed" << endl;
+//		}
+//	}
+
+//	if(phys->firstMomentCalc){
+//		phys->momentStrainEnergy = totalMomentStrainEnergy;
+//		phys->firstMomentCalc = false;
+//	}
+//	momentStrainEnergyChange = totalMomentStrainEnergy - phys->momentStrainEnergy;
+//	//cout << "Moment Strain Energy Change" << momentStrainEnergyChange << endl; 
+//	//cout << "Moment strain energy" << phys->momentStrainEnergy << endl; 
+//	//cout << "Total moment strain energy" << totalMomentStrainEnergy << endl;
+//	//phys->momentStrainEnergy = totalMomentStrainEnergy;
+//	phys->elapsedIter += 1;
+//	//cout << "Elapsed iter"<< phys->elapsedIter << endl;
+//	if (momentStrainEnergyChange > phys->momentStrainEnergyChange) phys->momentStrainEnergyChange = momentStrainEnergyChange;
+//	if (phys->elapsedIter >= elapsedIterFactor*momentRadiusFactor){ // the elapsed time should reflect 20*particlediameters radius Hazzard and Damjanac 2013
+//		phys->momentCalculated=true;   
+//		//cout << "MomentEnergyChange" << momentStrainEnergyChance << endl;
+//		if(phys->momentStrainEnergyChange!=0) phys->momentMagnitude = (2./3.)*log(phys->momentStrainEnergyChange)-3.2;  //empirical equation for energy magnitude (Hazzard and Damjanac 2013) 
+//		//if(phys->momentStrainEnergyChange==0) cout<<"avgDiameter " << avgDiameter << " found nearby interaciton? " << phys->nearbyFound << "over " << phys->elapsedIter << " iterations" <<endl;  // debugging. It appears some strain energy searches yield decreases of strain energy in neighbor hood. We are handling these by assining a 0 magnitude...but that seems wrong. 
+//	}
+//					
+//}
+
+// function used for extending smooth joint to newly broken interactions (function works, but results are mixed)
 void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::orientJointNormal(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact){
 		
 		const shared_ptr<Shape>& sphere1 = b1->shape;
