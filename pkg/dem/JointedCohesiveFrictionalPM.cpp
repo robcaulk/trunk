@@ -6,22 +6,22 @@
 #include<core/Omega.hpp>
 #include<pkg/common/Sphere.hpp>
 
-YADE_PLUGIN((JCFpmMat)(JCFpmState)(JCFpmPhys)(Ip2_JCFpmMat_JCFpmMat_JCFpmPhys)(Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM));
+YADE_PLUGIN((JCFpmMat)(JCFpmState)(JCFpmPhys)(Ip2_JCFpmMat_JCFpmMat_JCFpmPhys)(Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM));
 
 
 /********************** Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM ****************************/
-CREATE_LOGGER(Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM);
+CREATE_LOGGER(Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM);
 
 static boost::mutex nearbyInts_mutex;
 static boost::mutex clusterInts_mutex;
 
-bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig, shared_ptr<IPhys>& ip, Interaction* contact){
+bool Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig, shared_ptr<IPhys>& ip, Interaction* contact){
 
 	const int &id1 = contact->getId1();
 	const int &id2 = contact->getId2();
-	ScGeom* geom = static_cast<ScGeom*>(ig.get()); 
+	ScGeom6D* geom = static_cast<ScGeom6D*>(ig.get()); 
 	JCFpmPhys* phys = static_cast<JCFpmPhys*>(ip.get());
-	
+
 	Body* b1 = Body::byId(id1,scene).get();
 	Body* b2 = Body::byId(id2,scene).get();
 
@@ -201,7 +201,7 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
             totalShearCracksE+=0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) );
 
 	    // extend smooth joint model
-	    if (phys->breakType==1 && extendSmoothJoint && !phys->isOnJoint) orientJointNormal(phys, geom, b1, b2, contact);
+	  //  if (phys->breakType==1 && extendSmoothJoint && !phys->isOnJoint) orientJointNormal(phys, geom, b1, b2, contact);
 	    // create a text file to record properties of the broken bond (iteration, position, type (shear), cross section and contact normal orientation)
 	    if (recordCracks){
 	      std::ofstream file (fileCracks.c_str(), !cracksFileExist ? std::ios::trunc : std::ios::app);
@@ -251,13 +251,97 @@ bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig
 	/// those lines are needed if rootBody->forces.addForce and rootBody->forces.addMoment are used instead of applyForceAtContactPoint -> NOTE need to check for accuracy!!!
 	scene->forces.addTorque(id1,(geom->radius1-0.5*geom->penetrationDepth)* geom->normal.cross(-f));
 	scene->forces.addTorque(id2,(geom->radius2-0.5*geom->penetrationDepth)* geom->normal.cross(-f));
+
+	if (imposeMoments) imposeMomentLaw(phys,geom,b1,b2,contact);
 	return true;
-	
+}
+
+void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::imposeMomentLaw(JCFpmPhys* phys, ScGeom6D* geom, Body* b1, Body* b2, Interaction* contact){
+		/// Moment law  ///
+		const int &id1 = contact->getId1();
+		const int &id2 = contact->getId2();
+		const Real& dt = scene->dt;
+		State* de1 = Body::byId(id1,scene)->state.get();
+		State* de2 = Body::byId(id2,scene)->state.get();
+		if (phys->momentRotationLaw && (phys->isCohesive || always_use_moment_law)) {
+			if (!useIncrementalForm){
+				if (twist_creep) {
+					Real viscosity_twist = creep_viscosity * std::pow((2 * std::min(geom->radius1,geom->radius2)),2) / 16.0;
+					Real angle_twist_creeped = geom->getTwist() * (1 - scene->dt/viscosity_twist);
+					Quaternionr q_twist(AngleAxisr(geom->getTwist(),geom->normal));
+					Quaternionr q_twist_creeped(AngleAxisr(angle_twist_creeped,geom->normal));
+					Quaternionr q_twist_delta(q_twist_creeped * q_twist.conjugate());
+					geom->twistCreep = geom->twistCreep * q_twist_delta;
+				}
+				phys->moment_twist = (geom->getTwist()*phys->ktw)*geom->normal;
+				phys->moment_bending = geom->getBending() * phys->kr;
+			}	
+			else{ // Use incremental formulation to compute moment_twis and moment_bending (no twist_creep is applied)
+				if (twist_creep) throw std::invalid_argument("Law2_ScGeom6D_CohFrictPhys_CohesionMoment: no twist creep is included if the incremental form for the rotations is used.");
+				Vector3r relAngVel = geom->getRelAngVel(de1,de2,dt);
+				// *** Bending ***//
+				Vector3r relAngVelBend = relAngVel - geom->normal.dot(relAngVel)*geom->normal; // keep only the bending part
+				Vector3r relRotBend = relAngVelBend*dt; // relative rotation due to rolling behaviour	
+				// incremental formulation for the bending moment (as for the shear part)
+				Vector3r& momentBend = phys->moment_bending;
+				momentBend = geom->rotate(momentBend); // rotate moment vector (updated)
+				momentBend = momentBend-phys->kr*relRotBend;
+				// ----------------------------------------------------------------------------------------
+				// *** Torsion ***//
+				Vector3r relAngVelTwist = geom->normal.dot(relAngVel)*geom->normal;
+				Vector3r relRotTwist = relAngVelTwist*dt; // component of relative rotation along n  FIXME: sign?
+				// incremental formulation for the torsional moment
+				Vector3r& momentTwist = phys->moment_twist;
+				momentTwist = geom->rotate(momentTwist); // rotate moment vector (updated)
+				momentTwist = momentTwist-phys->ktw*relRotTwist; // FIXME: sign?
+			}
+			/// Plasticity ///
+			// limit rolling moment to the plastic value, if required
+			if (phys->maxRollPl>=0.){ // do we want to apply plasticity?
+				Real RollMax = phys->maxRollPl*phys->normalForce.norm();
+				if (!useIncrementalForm) LOG_WARN("If :yref:`Law2_ScGeom6D_CohFrictPhys_CohesionMoment::useIncrementalForm` is false, then plasticity will not be applied correctly (the total formulation would not reproduce irreversibility).");
+				Real scalarRoll = phys->moment_bending.norm();
+				if (scalarRoll>RollMax){ // fix maximum rolling moment
+					Real ratio = RollMax/scalarRoll;
+					phys->moment_bending *= ratio;
+					if (scene->trackEnergy){
+						Real bendingdissip=((1/phys->kr)*(scalarRoll-RollMax)*RollMax)/*active force*/;
+						if(bendingdissip>0) scene->energy->add(bendingdissip,"bendingDissip",bendingDissipIx,/*reset*/false);}
+				}
+			}
+			// limit twisting moment to the plastic value, if required
+			if (phys->maxTwistPl>=0.){ // do we want to apply plasticity?
+				Real TwistMax = phys->maxTwistPl*phys->normalForce.norm();
+				if (!useIncrementalForm) LOG_WARN("If :yref:`Law2_ScGeom6D_CohFrictPhys_CohesionMoment::useIncrementalForm` is false, then plasticity will not be applied correctly (the total formulation would not reproduce irreversibility).");
+				Real scalarTwist= phys->moment_twist.norm();
+				if (scalarTwist>TwistMax){ // fix maximum rolling moment
+					Real ratio = TwistMax/scalarTwist;
+					phys->moment_twist *= ratio;
+					if (scene->trackEnergy){
+						Real twistdissip=((1/phys->ktw)*(scalarTwist-TwistMax)*TwistMax)/*active force*/;
+						if(twistdissip>0) scene->energy->add(twistdissip,"twistDissip",twistDissipIx,/*reset*/false);}
+				}	
+			}
+			// Apply moments now
+			Vector3r moment = phys->moment_twist + phys->moment_bending;
+			scene->forces.addTorque(id1,-moment);
+			scene->forces.addTorque(id2, moment);			
+		}
+		/// Moment law END       ///
 }
 
 
+
+
+
+
+
+
+	
+
+
 // function used to parse through new interactions and only add unique ints to cluster list	
-void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::addUniqueIntsToList(JCFpmPhys* phys, JCFpmPhys* nearbyPhys){
+void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::addUniqueIntsToList(JCFpmPhys* phys, JCFpmPhys* nearbyPhys){
 	unsigned int size = phys->nearbyInts.size();
 	for (unsigned int i=0; i<nearbyPhys->nearbyInts.size(); i++){
 		if (!nearbyPhys->nearbyInts[i]) continue;
@@ -281,7 +365,7 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::addUniqueIntsToList(JCFp
 
 
 // function used to check if the newly broken bond belongs in a cluster or not, if so attach to proper cluster and set appropriate flags
-void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::checkForCluster(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact){
+void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::checkForCluster(JCFpmPhys* phys, ScGeom6D* geom, Body* b1, Body* b2, Interaction* contact){
 
 	const shared_ptr<Shape>& sphere1 = b1->shape;
 	const shared_ptr<Shape>& sphere2 = b2->shape;
@@ -294,13 +378,13 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::checkForCluster(JCFpmPhy
 	FOREACH(const shared_ptr<Interaction>& I, *scene->interactions){
 	//#endif
 		JCFpmPhys* nearbyPhys;
-		const ScGeom* nearbyGeom;
+		const ScGeom6D* nearbyGeom;
 		if (!I || !I->geom.get() || !I->phys.get()) continue;
 		if (I && I->isReal() && JCFpmPhys::getClassIndexStatic()==I->phys->getClassIndex()){
 			nearbyPhys = YADE_CAST<JCFpmPhys*>(I->phys.get());
 			if (!nearbyPhys) continue;
 			if (I->geom.get() /*&& !nearbyPhys->momentBroken*/){
-				nearbyGeom = YADE_CAST<ScGeom*> (I->geom.get());
+				nearbyGeom = YADE_CAST<ScGeom6D*> (I->geom.get());
                     		if (!nearbyGeom) continue;
 				Vector3r nearbyInteractionLocation = nearbyGeom->contactPoint;
 				Vector3r proximityVector = nearbyInteractionLocation-brokenInteractionLocation;
@@ -337,7 +421,7 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::checkForCluster(JCFpmPhy
 }
 
 // function used for clustering broken bonds and nearby interactions
-void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::clusterInteractions(JCFpmPhys* phys, Interaction* contact){
+void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::clusterInteractions(JCFpmPhys* phys, Interaction* contact){
 	JCFpmPhys* originalPhys = YADE_CAST<JCFpmPhys*>(phys->originalEvent->phys.get());
 	addUniqueIntsToList(originalPhys, phys);  //NEED TO PUSHBACK ONLY UNIQUE INTS. we don't want a list with duplicate events (also updates reference strain)
 	phys->interactionsAdded = true;
@@ -351,7 +435,7 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::clusterInteractions(JCFp
 
 
 // function cycles through the list of interactions associated with a cluster and computes moment
-void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeClusteredMoment(JCFpmPhys* phys){
+void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::computeClusteredMoment(JCFpmPhys* phys){
 	Real totalMomentStrainEnergy = 0;
 	Real momentStrainEnergyChange = 0;
 	for (unsigned int i=0; i<phys->nearbyInts.size(); i++){
@@ -380,14 +464,14 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeClusteredMoment(J
 
 
 // function computes the centroid of a cluster
-void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeCentroid(JCFpmPhys* phys){
+void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::computeCentroid(JCFpmPhys* phys){
 	JCFpmPhys* originalPhys = YADE_CAST<JCFpmPhys*>(phys->originalEvent->phys.get());
 	Vector3r summedLocations = Vector3r::Zero();
 	for (unsigned int i=0; i<originalPhys->clusterInts.size(); i++){
-		ScGeom* nearbyGeom;
+		ScGeom6D* nearbyGeom;
 		if (!originalPhys->clusterInts[i]) continue;
 		if (originalPhys->clusterInts[i]->geom.get()){
-			nearbyGeom = YADE_CAST<ScGeom*> (originalPhys->clusterInts[i]->geom.get());
+			nearbyGeom = YADE_CAST<ScGeom6D*> (originalPhys->clusterInts[i]->geom.get());
 			Vector3r nearbyInteractionLocation = nearbyGeom->contactPoint;
 			summedLocations += nearbyInteractionLocation;
 		}
@@ -397,211 +481,6 @@ void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeCentroid(JCFpmPhy
 	
 }
 
-// function for computing moments based on single breaks
-//void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeMoment(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact){
-
-//	const shared_ptr<Shape>& sphere1 = b1->shape;
-//	const shared_ptr<Shape>& sphere2 = b2->shape;
-//	const Real sphereRadius1 = static_cast<Sphere*>(sphere1.get())->radius;
-//	const Real sphereRadius2 = static_cast<Sphere*>(sphere2.get())->radius;
-//	const Real avgDiameter = (sphereRadius1+sphereRadius2);
-//	Vector3r& brokenInteractionLocation = geom->contactPoint;
-//	Real totalMomentStrainEnergy = 0;
-//	Real momentStrainEnergyChange = 0;
-//	phys->nearbyFound=0;
-//	
-
-//	// search through all interactions to find nearby interactions for energy calc
-//	//#ifdef YADE_OPENMP
-//	//int nIntr=(int)scene->interactions->size();
-//	//#pragma omp parallel for
-//	//for (int j=0; j<nIntr; j++){
-//	//	const shared_ptr<Interaction>& I = (*scene->interactions)[j];
-//	//#else 
-//	if(phys->firstMomentCalc){
-//	FOREACH(const shared_ptr<Interaction>& I, *scene->interactions){
-//	//#endif
-//		const JCFpmPhys* nearbyPhys;
-//		const ScGeom* nearbyGeom;
-//		if (!I || !I->geom.get() || !I->phys.get()) continue;
-//		if (I && I->isReal() && JCFpmPhys::getClassIndexStatic()==I->phys->getClassIndex()){
-//			nearbyPhys = YADE_CAST<JCFpmPhys*>(I->phys.get());
-//			if (!nearbyPhys) continue;
-//			if (I->geom.get() && !nearbyPhys->momentBroken){		//nearbyPhys->isOnJoint && && !nearbyPhys->onFracture	
-//				nearbyGeom = YADE_CAST<ScGeom*> (I->geom.get());
-//				//cout<<"nearbyPGeom declared"<<endl;
-//                    		if (!nearbyGeom) continue;
-//				Vector3r nearbyInteractionLocation = nearbyGeom->contactPoint;
-//				//cout<<"nearbyInteraction location"<< nearbyInteractionLocation << endl;
-//				Vector3r proximityVector = nearbyInteractionLocation-brokenInteractionLocation;
-//				Real proximity = proximityVector.norm();
-//				//cout<<"proximity computed"<< proximity << endl;
-//				//cout << "allowable radius" << avgDiameter*momentRadiusFactor << endl;
-//				
-//				if (proximity < avgDiameter*momentRadiusFactor && proximity != 0){
-//					totalMomentStrainEnergy += nearbyPhys->strainEnergy;
-//					phys->nearbyInts.push_back(I);
-//					//cout << "nearbyInts set in vector" << endl;					
-//				}
-//			}
-//		}
-//	}
-//	} else {
-//		for (unsigned int i=0; i<phys->nearbyInts.size(); i++){
-//			const JCFpmPhys* nearbyPhys;
-//			if (!phys->nearbyInts[i] || !phys->nearbyInts[i]->geom.get() || !phys->nearbyInts[i]->phys.get()) continue;
-//			nearbyPhys = YADE_CAST<JCFpmPhys*>(phys->nearbyInts[i]->phys.get());
-//			if (!nearbyPhys) continue; 
-//			totalMomentStrainEnergy += nearbyPhys->strainEnergy;
-//			//cout<< "nearbyInts indexed" << endl;
-//		}
-//	}
-
-//	if(phys->firstMomentCalc){
-//		phys->momentStrainEnergy = totalMomentStrainEnergy;
-//		phys->firstMomentCalc = false;
-//	}
-//	momentStrainEnergyChange = totalMomentStrainEnergy - phys->momentStrainEnergy;
-//	//cout << "Moment Strain Energy Change" << momentStrainEnergyChange << endl; 
-//	//cout << "Moment strain energy" << phys->momentStrainEnergy << endl; 
-//	//cout << "Total moment strain energy" << totalMomentStrainEnergy << endl;
-//	//phys->momentStrainEnergy = totalMomentStrainEnergy;
-//	phys->elapsedIter += 1;
-//	//cout << "Elapsed iter"<< phys->elapsedIter << endl;
-//	if (momentStrainEnergyChange > phys->momentStrainEnergyChange) phys->momentStrainEnergyChange = momentStrainEnergyChange;
-//	if (phys->elapsedIter >= elapsedIterFactor*momentRadiusFactor){ // the elapsed time should reflect 20*particlediameters radius Hazzard and Damjanac 2013
-//		phys->momentCalculated=true;   
-//		//cout << "MomentEnergyChange" << momentStrainEnergyChance << endl;
-//		if(phys->momentStrainEnergyChange!=0) phys->momentMagnitude = (2./3.)*log(phys->momentStrainEnergyChange)-3.2;  //empirical equation for energy magnitude (Hazzard and Damjanac 2013) 
-//		//if(phys->momentStrainEnergyChange==0) cout<<"avgDiameter " << avgDiameter << " found nearby interaciton? " << phys->nearbyFound << "over " << phys->elapsedIter << " iterations" <<endl;  // debugging. It appears some strain energy searches yield decreases of strain energy in neighbor hood. We are handling these by assining a 0 magnitude...but that seems wrong. 
-//	}
-//					
-//}
-
-// function used for extending smooth joint to newly broken interactions (function works, but results are mixed)
-void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::orientJointNormal(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact){
-		
-		const shared_ptr<Shape>& sphere1 = b1->shape;
-		const shared_ptr<Shape>& sphere2 = b2->shape;
-		const Real sphereRadius1 = static_cast<Sphere*>(sphere1.get())->radius;
-		const Real sphereRadius2 = static_cast<Sphere*>(sphere2.get())->radius;
-		Real maxAllowableDistance = ((sphereRadius1 + sphereRadius2)/2) * fracProximityFactor;
-		bool foundClosest = false;
-		//bool foundNextClosest = false;
-		
-		
-//			cout<<"Extending smooth joint" <<endl;			
-			Vector3r& brokenInteractionLocation = geom->contactPoint;
-//			cout<<"contactPoint found" << brokenInteractionLocation << endl;
-			Real closestProximity = 10000;  //big number
-			//Real nextClosestProximity = 10000;  //big number
-			Real planeAngle=0;
-//			shared_ptr<Interaction> closestInteraction;
-//			shared_ptr<Interaction> nextClosestInteraction;
-			Vector3r interactionPlane1 = Vector3r::Zero();
-			Vector3r interactionPlane2 = Vector3r::Zero();
-			Vector3r closestProximityVector = Vector3r::Zero();
-
-			FOREACH(const shared_ptr<Interaction>& I, *scene->interactions){
-                    const JCFpmPhys* nearbyPhys;
-                    const ScGeom* nearbyGeom;
-			if (!I || !I->geom.get() || !I->phys.get()) continue;
-			if (I && I->isReal() && JCFpmPhys::getClassIndexStatic()==I->phys->getClassIndex()) {
-//				const int &id1 = I->getId1();
-//				const int &id2 = I->getId2();
-//				Body* b1 = Body::byId(id1,scene).get();
-//				Body* b2 = Body::byId(id2,scene).get();
-//				JCFpmState* st1=dynamic_cast<JCFpmState*>(Body::byId(I->getId1(),scene)->state.get());
-//				JCFpmState* st2=dynamic_cast<JCFpmState*>(Body::byId(I->getId2(),scene)->state.get());
-
-//				Real particleProximity = (st1->pos_get()-st2->pos_get()).norm();
-//				if (particleProximity> b1->bound->sweepLength) continue;
-//				cout << "particleProximity " << particleProximity << " Sweep length "<< b1->bound->sweepLength << endl;
-                nearbyPhys = YADE_CAST<JCFpmPhys*>(I->phys.get());
-                if (!nearbyPhys) continue;
-//				cout << "nearbyPhys assigned" << endl;				
-				if (nearbyPhys->isOnJoint && I->geom.get() && !nearbyPhys->onFracture){
-					//cout<<"nearbyPhys is broken and onFracture"<<endl;				
-
-					nearbyGeom = YADE_CAST<ScGeom*> (I->geom.get());
-					//cout<<"nearbyPGeom declared"<<endl;
-                    			if (!nearbyGeom) continue;
-					Vector3r nearbyInteractionLocation = nearbyGeom->contactPoint;
-					//cout<<"nearbyInteraction location"<< nearbyInteractionLocation << endl;
-					Vector3r proximityVector = nearbyInteractionLocation-brokenInteractionLocation;
-					//cout<<"proximityVector computed"<<endl;
-					Real proximity = proximityVector.norm();
-
-					//cout<<"proximity computed "<< proximity << "proximityVector " << proximityVector << endl;
-					if (proximity < closestProximity && proximity < maxAllowableDistance && proximity!=0) {
-						closestProximity = proximity;
-						closestProximityVector = proximityVector;
-					//	cout<<"closestProximity set"<< closestProximity<<endl;
-						//closestInteraction = I;
-						
-						interactionPlane1 = proximityVector/proximity; // the normalized interaction plane
-					//	cout<<"interactionPlane1 computed "<<interactionPlane1<< endl;
-						foundClosest = true;
-					}
-
-					if (foundClosest && proximity < maxAllowableDistance){ 
-						interactionPlane2 = proximityVector/proximity;
-						Real angle = acos((interactionPlane1.dot(interactionPlane2))/(closestProximity*proximity));	
-						if (angle>planeAngle) planeAngle = angle;
-					}
-							
-			
-					
-					//if (proximity!=0 && angle>planeAngle) { 
-					//	nextClosestProximity = proximity;
-					//	cout<<"nextclosestProximity set "<< nextClosestProximity<< endl;
-						//nextClosestInteraction = I;
-					//	interactionPlane2 = proximityVector/proximity; // normalized interaction plane 
-					//	cout<<"interactionPlane2 computed "<<interactionPlane2<<endl;
-					//	Vector3r forceFracturePlane = proximityVector - closestProximityVector;
-					//	planeAngle = acos((interactionPlane1.dot(interactionPlane2))/(closestProximity*nextClosestProximity))
-					//	if (forceFracturePlane.norm() > 0.5*maxAllowableDistance) foundNextClosest = true;
-					//}
-				}
-				}
-			}
-		if (foundClosest) {
-			const shared_ptr<JCFpmMat>& yade1 = YADE_PTR_CAST<JCFpmMat>(b1->material);
-			const shared_ptr<JCFpmMat>& yade2 = YADE_PTR_CAST<JCFpmMat>(b2->material);
-			JCFpmState* st1=dynamic_cast<JCFpmState*>(Body::byId(contact->getId1(),scene)->state.get());
-			JCFpmState* st2=dynamic_cast<JCFpmState*>(Body::byId(contact->getId2(),scene)->state.get());
-			st1->onJoint=st2->onJoint=true;
-		
-
-			Real jf1 	= yade1->jointFrictionAngle;
-			Real jf2 	= yade2->jointFrictionAngle;
-			Real jkn1 	= yade1->jointNormalStiffness;
-			Real jkn2 	= yade2->jointNormalStiffness;
-			Real jks1 	= yade1->jointShearStiffness;
-			Real jks2 	= yade2->jointShearStiffness;
-			Real jdil1 	= yade1->jointDilationAngle;
-			Real jdil2 	= yade2->jointDilationAngle;
-//			Real jcoh1 	= yade1->jointCohesion;
-//			Real jcoh2 	= yade2->jointCohesion;
-//			Real jSigT1	= yade1->jointTensileStrength;
-//			Real jSigT2	= yade2->jointTensileStrength;
-		
-			phys->tanFrictionAngle = std::tan(std::min(jf1,jf2));
-			
-			//contactPhysics->kn = jointNormalStiffness*2.*R1*R2/(R1+R2); // very first expression from Luc
-			//contactPhysics->kn = (jkn1+jkn2)/2.0*2.*R1*R2/(R1+R2); // after putting jointNormalStiffness in material
-			phys->kn = ( jkn1 + jkn2 ) /2.0 * phys->crossSection; // for a size independant expression
-			phys->ks = ( jks1 + jks2 ) /2.0 * phys->crossSection; // for a size independant expression
-			
-			phys->tanDilationAngle = std::tan(std::min(jdil1,jdil2));
-			phys->isOnJoint=phys->onFracture=1;
-			cout<<"set the current interaction to onJoint"<<endl;
-			phys->jointNormal=interactionPlane1.cross(interactionPlane2);	
-			cout<<"set the interaction jointNormal "<<phys->jointNormal<<endl;
-		}
-		
-}
-
 CREATE_LOGGER(Ip2_JCFpmMat_JCFpmMat_JCFpmPhys);
 
 void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const shared_ptr<Material>& b2, const shared_ptr<Interaction>& interaction){
@@ -609,7 +488,7 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 	/* avoid updates of interaction if it already exists */
 	if( interaction->phys ) return; 
 
-	ScGeom* geom=dynamic_cast<ScGeom*>(interaction->geom.get());
+	ScGeom6D* geom=dynamic_cast<ScGeom6D*>(interaction->geom.get());
 	assert(geom);
 
 	const shared_ptr<JCFpmMat>& yade1 = YADE_PTR_CAST<JCFpmMat>(b1);
@@ -634,6 +513,12 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 	/* From interaction geometry */
 	Real R1= geom->radius1;
 	Real R2= geom->radius2;
+
+	Real AlphaKr, AlphaKtw;
+	if (yade1->alphaKr && yade2->alphaKr) AlphaKr = 2.0*yade1->alphaKr*yade2->alphaKr/(yade1->alphaKr+yade2->alphaKr);
+	else AlphaKr = 0;
+	if (yade1->alphaKtw && yade2->alphaKtw) AlphaKtw = 2.0*yade1->alphaKtw*yade2->alphaKtw/(yade1->alphaKtw+yade2->alphaKtw);
+	else AlphaKtw=0;
 	
 	// control the radius used for cross-sectional area computation
 	if (useAvgRadius){	
@@ -653,6 +538,14 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 	else
 	  contactPhysics->ks = 2.*E1*R1*v1*E2*R2*v2/(E1*R1*v1+E2*R2*v2);
 	contactPhysics->tanFrictionAngle = std::tan(std::min(f1,f2));
+
+	contactPhysics->kr = R1*R2*contactPhysics->kn*AlphaKr;
+	contactPhysics->ktw = R2*R1*contactPhysics->ks*AlphaKtw;
+
+	contactPhysics->maxRollPl = min(yade1->etaRoll*R1,yade2->etaRoll*R2);
+	contactPhysics->maxTwistPl = min(yade1->etaTwist*R2,yade2->etaTwist*R2);
+
+	contactPhysics->momentRotationLaw=(yade1->momentRotationLaw && yade2->momentRotationLaw);
 
 	if (stiffnessWeibullShapeParameter!=0) distributeStiffnesses(contactPhysics);
 	// cohesive properties
