@@ -392,6 +392,9 @@ void VTKRecorder::action(){
 	vtkSmartPointer<vtkDoubleArray> momentiter = vtkSmartPointer<vtkDoubleArray>::New();
 	momentiter->SetNumberOfComponents(1);
 	momentiter->SetName("momentiter");
+	vtkSmartPointer<vtkDoubleArray> momenttime = vtkSmartPointer<vtkDoubleArray>::New();
+	momenttime->SetNumberOfComponents(1);
+	momenttime->SetName("momenttime");
 	vtkSmartPointer<vtkDoubleArray> momentSize = vtkSmartPointer<vtkDoubleArray>::New();
 	momentSize->SetNumberOfComponents(1);
 	momentSize->SetName("momentSize");
@@ -1101,14 +1104,15 @@ void VTKRecorder::action(){
 		if(file){
 			 while ( !file.eof() ){
 				std::string line;
-				Real i, p0, p1, p2, moment, numInts, eventNum;
+				Real i, p0, p1, p2, moment, numInts, eventNum, time;
 				while ( std::getline(file, line)) {/* writes into string "line", a line of file "file". To go along diff. lines*/
-					file >> i >> p0 >> p1 >> p2 >> moment >> numInts >> eventNum;
+					file >> i >> p0 >> p1 >> p2 >> moment >> numInts >> eventNum >> time;
 					vtkIdType pid[1];
 					pid[0] = momentPos->InsertNextPoint(p0, p1, p2);
 					momentCells->InsertNextCell(1,pid);
 					momentSize->InsertNextValue(moment);
 					momentiter->InsertNextValue(i);
+					momenttime->InsertNextValue(time);
 					momentNumInts->InsertNextValue(numInts);
 					momentEventNum->InsertNextValue(eventNum);
 				}
@@ -1119,6 +1123,7 @@ void VTKRecorder::action(){
 		momentUg->SetPoints(momentPos);
 		momentUg->SetCells(VTK_VERTEX, momentCells);
 		momentUg->GetPointData()->AddArray(momentiter);
+		momentUg->GetPointData()->AddArray(momenttime);
 		momentUg->GetPointData()->AddArray(momentSize);
 		momentUg->GetPointData()->AddArray(momentNumInts);
 		momentUg->GetPointData()->AddArray(momentEventNum);

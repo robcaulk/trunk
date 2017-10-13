@@ -65,19 +65,18 @@ bool Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& 
 	
 	phys->crackJointAperture = D<0? -D : 0.; // for DFNFlow
 	phys->separation = D; // track the separation between particles
-	if (!phys->momentBroken) phys->strainEnergy = 0.5*((pow(phys->normalForce.norm(),2)/phys->kn) + (pow(phys->shearForce.norm(),2)/phys->ks));
+	if (!phys->momentBroken  && useStrainEnergy) phys->strainEnergy = 0.5*((pow(phys->normalForce.norm(),2)/phys->kn) + (pow(phys->shearForce.norm(),2)/phys->ks));
+	else if (!phys->momentBroken && !useStrainEnergy) computeKineticEnergy(phys, b1, b2);
 
 //for clustered events:
 	if (phys->momentBroken && recordMoments && !phys->momentCalculated){
-		//if (!phys->checkedForCluster) checkForCluster(phys, geom, b1, b2, contact);
-		//if (!phys->interactionsAdded) clusterInteractions(phys, contact);
 		if (phys->originalClusterEvent && !phys->computedCentroid) computeCentroid(phys);
 		if (phys->originalClusterEvent) computeClusteredMoment(phys);
 		
-		if (phys->momentCalculated){
+		if (phys->momentCalculated && phys->momentMagnitude!=0){
 			std::ofstream file (fileMoments.c_str(), !momentsFileExist ? std::ios::trunc : std::ios::app);
-			if(file.tellp()==0){ file <<"i p0 p1 p2 moment numInts eventNum"<<endl; }
-			file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( phys->momentCentroid[0] ) <<" "<< boost::lexical_cast<string> ( phys->momentCentroid[1] ) <<" "<< boost::lexical_cast<string> ( phys->momentCentroid[2] ) <<" "<< boost::lexical_cast<string> ( phys->momentMagnitude ) << " " << boost::lexical_cast<string> ( phys->clusterInts.size() ) << " " << boost::lexical_cast<string> ( phys->eventNumber ) << endl;
+			if(file.tellp()==0){ file <<"i p0 p1 p2 moment numInts eventNum time"<<endl; }
+			file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( phys->momentCentroid[0] ) <<" "<< boost::lexical_cast<string> ( phys->momentCentroid[1] ) <<" "<< boost::lexical_cast<string> ( phys->momentCentroid[2] ) <<" "<< boost::lexical_cast<string> ( phys->momentMagnitude ) << " " << boost::lexical_cast<string> ( phys->clusterInts.size() ) << " " << boost::lexical_cast<string> ( phys->eventNumber ) << " " << boost::lexical_cast<string> (scene->time) << endl;
 			momentsFileExist=true;
 		}
 		
@@ -125,6 +124,11 @@ bool Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& 
 	      file << boost::lexical_cast<string> ( scene->iter )<<" "<< boost::lexical_cast<string> ( geom->contactPoint[0] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[1] ) <<" "<< boost::lexical_cast<string> ( geom->contactPoint[2] ) <<" "<< 0 <<" "<< boost::lexical_cast<string> ( 0.5*(geom->radius1+geom->radius2) ) <<" "<< boost::lexical_cast<string> ( crackNormal[0] ) <<" "<< boost::lexical_cast<string> ( crackNormal[1] ) <<" "<< boost::lexical_cast<string> ( crackNormal[2] ) << " " << boost::lexical_cast<string> ( phys->onFracture) << " " <<boost::lexical_cast<string> ( 0.5*( ((scalarNF*scalarNF)/phys->kn) + ((scalarSF*scalarSF)/phys->ks) ) ) << endl;
 	    
             }
+            if (recordMoments && !phys->momentCalculated){
+                checkForCluster(phys, geom, b1, b2, contact);
+		clusterInteractions(phys, contact);
+		computeTemporalWindow(phys, b1, b2);
+            }
             cracksFileExist=true;
 	    /// Timos
 	    if (!neverErase) return false; 
@@ -137,12 +141,6 @@ bool Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& 
 	      phys->isBroken = true;
 	      return true; // do we need this? not sure -> yes, it ends the loop (avoid the following calculations)
 	    }
-
-            if (recordMoments && !phys->momentCalculated){
-                checkForCluster(phys, geom, b1, b2, contact);
-		clusterInteractions(phys, contact);
-            }
-
 	  }
 	}
 	
@@ -217,6 +215,12 @@ bool Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& 
 	    phys->isCohesive = 0;
 	    phys->FnMax = 0;
 	    phys->FsMax = 0;
+
+            if (recordMoments && !phys->momentCalculated){
+                checkForCluster(phys, geom, b1, b2, contact);
+		clusterInteractions(phys, contact);
+		computeTemporalWindow(phys, b1, b2);
+            }
            
 // 	    shearForce *= Fn*phys->tanFrictionAngle/scalarShearForce; // now or at the next timestep?
 	    if ( D < 0 ) { // spheres do not touch
@@ -228,10 +232,6 @@ bool Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& 
 	      }
 
 	    }
-            if (recordMoments && !phys->momentCalculated){
-                checkForCluster(phys, geom, b1, b2, contact);
-		clusterInteractions(phys, contact);
-            }
 	  }
 	}
 
@@ -333,11 +333,27 @@ void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::imposeMomentLaw(JCFpmP
 
 
 
-
-
-
-
+void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::computeKineticEnergy
+	(JCFpmPhys* phys, Body* b1, Body* b2)
+	{
+	JCFpmState* state1 = YADE_CAST<JCFpmState*>(b1->state.get());
+	JCFpmState* state2 = YADE_CAST<JCFpmState*>(b2->state.get());
+	Real m1 = state1->mass; 
+	Real m2 = state2->mass;
+	Vector3r vel1 = state1->vel;
+	Vector3r vel2 = state2->vel;
+	Vector3r inert1 = state1->inertia;
+	Vector3r inert2= state2->inertia;
+	Vector3r angVel1 = state1->angVel;
+	Vector3r angVel2 = state2->angVel;
 	
+	Real kineticEnergy1 = 0.5 * (m1*(vel1[0]*vel1[0]+vel1[1]*vel1[1]+vel1[2]*vel1[2]) 
+		+ inert1[0]*(angVel1[0]*angVel1[0]+angVel1[1]*angVel1[1]+angVel1[2]*angVel1[2]));
+	Real kineticEnergy2 = 0.5 * (m2*(vel2[0]*vel2[0]+vel2[1]*vel2[1]+vel2[2]*vel2[2]) 
+		+ inert2[0]*(angVel2[0]*angVel2[0]+angVel2[1]*angVel2[1]+angVel2[2]*angVel2[2]));
+
+	phys->kineticEnergy = kineticEnergy1 + kineticEnergy2;
+}
 
 
 // function used to parse through new interactions and only add unique ints to cluster list	
@@ -356,8 +372,8 @@ void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::addUniqueIntsToList(JC
 		boost::mutex::scoped_lock lock(nearbyInts_mutex);
 		if (pushBack && nearbyPhys->nearbyInts[i]){
 			phys->nearbyInts.push_back(nearbyPhys->nearbyInts[i]);
-			JCFpmPhys* strainPhys = YADE_CAST<JCFpmPhys*> (nearbyPhys->nearbyInts[i]->phys.get()); 
-			phys->momentStrainEnergy += strainPhys->strainEnergy;  // while we are here we update the reference strain by adding the strain of the newly added ints
+			JCFpmPhys* nrgPhys = YADE_CAST<JCFpmPhys*> (nearbyPhys->nearbyInts[i]->phys.get()); 
+			phys->momentEnergy += (useStrainEnergy ? nrgPhys->strainEnergy : nrgPhys->kineticEnergy);  // while we are here we update the reference strain (or kinetic) energy by adding the strain (or kinetic) energy of the newly added ints
 		}
 			
 	}
@@ -436,31 +452,52 @@ void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::clusterInteractions(JC
 
 // function cycles through the list of interactions associated with a cluster and computes moment
 void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::computeClusteredMoment(JCFpmPhys* phys){
-	Real totalMomentStrainEnergy = 0;
-	Real momentStrainEnergyChange = 0;
+	Real totalMomentEnergy = 0;
+	Real momentEnergyChange = 0;
 	for (unsigned int i=0; i<phys->nearbyInts.size(); i++){
 		const JCFpmPhys* nearbyPhys;
 		if (!phys->nearbyInts[i] || !phys->nearbyInts[i]->geom.get() || !phys->nearbyInts[i]->phys.get()) continue;
 		nearbyPhys = YADE_CAST<JCFpmPhys*>(phys->nearbyInts[i]->phys.get());
 		if (!nearbyPhys) continue;
-		totalMomentStrainEnergy += nearbyPhys->strainEnergy;
+		totalMomentEnergy += (useStrainEnergy ? nearbyPhys->strainEnergy : nearbyPhys->kineticEnergy);
 	}
 	if(phys->firstMomentCalc){
-		phys->momentStrainEnergy = totalMomentStrainEnergy;
+		phys->momentEnergy = totalMomentEnergy;
 		phys->firstMomentCalc = false;
 	}
-	momentStrainEnergyChange = totalMomentStrainEnergy - phys->momentStrainEnergy;
+	momentEnergyChange = totalMomentEnergy - phys->momentEnergy;
 	phys->elapsedIter += 1;
-	if (momentStrainEnergyChange > phys->momentStrainEnergyChange) phys->momentStrainEnergyChange = momentStrainEnergyChange;
-	if (phys->elapsedIter >= elapsedIterFactor*momentRadiusFactor){ // the elapsed time should reflect 20*particlediameters radius Hazzard and Damjanac 2013
-		phys->momentCalculated=true;
+	if (momentEnergyChange > phys->momentEnergyChange) phys->momentEnergyChange = momentEnergyChange;
+	if (phys->elapsedIter >= phys->temporalWindow){ // the elapsed time should reflect 20*particlediameters radius Hazzard and Damjanac 2013
 		phys->originalClusterEvent=false; // this event no longer exists, so we need to allow other new events to occur nearby.    
-		//cout << "MomentEnergyChange" << momentStrainEnergyChance << endl;
-		if(phys->momentStrainEnergyChange!=0) phys->momentMagnitude = (2./3.)*log(phys->momentStrainEnergyChange*momentStrainFudgeFactor)-3.2;  //empirical equation for energy magnitude (Hazzard and Damjanac 2013) 
+		if(phys->momentEnergyChange!=0) phys->momentMagnitude = (2./3.)*log(phys->momentEnergyChange*momentFudgeFactor)-3.2; 
+		phys->momentCalculated=true;	
+ //empirical equation for energy magnitude (Hazzard and Damjanac 2013) 
 		//if(phys->momentStrainEnergyChange==0) cout<<"avgDiameter " << avgDiameter << " found nearby interaciton? " << phys->nearbyFound << "over " << phys->elapsedIter << " iterations" <<endl;  // debugging. It appears some strain energy searches yield decreases of strain energy in neighbor hood. We are handling these by assining a 0 magnitude...but that seems wrong. Turns out these are just very very small events. There is actually no change of strain around them. Due to weibull dist int areas?
 	}
 					
 }
+
+// function used to compute the temporal window based on the PWave velocity of the medium
+void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::computeTemporalWindow
+	(JCFpmPhys* phys, Body* b1, Body* b2)
+	{
+	const shared_ptr<Shape>& sphere1 = b1->shape;
+	const shared_ptr<Shape>& sphere2 = b2->shape;
+	const Real sphereRadius1 = static_cast<Sphere*>(sphere1.get())->radius;
+	const Real sphereRadius2 = static_cast<Sphere*>(sphere2.get())->radius;	
+	const Real avgDiameter = (sphereRadius1+sphereRadius2);
+	const Real spatialWindow = avgDiameter*momentRadiusFactor;
+	const shared_ptr<ElastMat>& elasticMat1 = YADE_PTR_DYN_CAST<ElastMat>(b1->material);
+	const shared_ptr<ElastMat>& elasticMat2 = YADE_PTR_DYN_CAST<ElastMat>(b2->material);
+	const Real velocityP1 = sqrt(elasticMat1->young/elasticMat1->density);
+	const Real velocityP2 = sqrt(elasticMat2->young/elasticMat2->density);
+
+	phys->temporalWindow = floor(spatialWindow/(max(velocityP1, velocityP2)*scene->dt));
+}
+	
+	
+
 
 
 // function computes the centroid of a cluster
@@ -664,7 +701,8 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::distributeCrossSectionsWeibull(shared_ptr<
 	std::weibull_distribution<Real> weibullDistribution(xSectionWeibullShapeParameter, /*xSectionWeibullScaleParameter*/ 1.);
 	//Real interactingRadius = scaleFactor*weibullDistribution(e2)/2.;
 	Real correction = weibullDistribution(e2);
-	if (correction < weibullCutOff) correction = weibullCutOff;
+	if (correction < weibullCutOffMin) correction = weibullCutOffMin;
+	else if (correction > weibullCutOffMax) correction = weibullCutOffMax;
 	//cout << "correction " << correction << " min R1 R2 "<< min(R1, R2) << endl;
 	Real interactingRadius = correction*min(R1, R2);  // correcting radius to account for grain interactions
 	contactPhysics->crossSection = Mathr::PI*pow(interactingRadius,2);

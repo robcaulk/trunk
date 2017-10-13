@@ -87,8 +87,9 @@ class JCFpmPhys: public NormShearPhys {
 
 			((bool, breakOccurred,0,,"Flag used to trigger retriangulation as soon as a cohesive bond breaks in FlowEngine (for DFNFlow use only)"))
 			((Real,strainEnergy,0,,"strain energy of interaction"))
-			((Real,momentStrainEnergy,0,,"reference strain energy of surrounding interactions"))
-			((Real,momentStrainEnergyChange,0,,"storage of the maximum strain energy change for surrounding interactions"))
+			((Real,kineticEnergy,0,,"kinetic energy of the two spheres participating in the interaction (easiest to store this value with interaction instead of spheres since we are using this information for moment magnitude estimations and associated interaction searches)"))
+			((Real,momentEnergy,0,,"reference strain (or kinetic) energy of surrounding interactions (particles)"))
+			((Real,momentEnergyChange,0,,"storage of the maximum strain (or kinetic) energy change for surrounding interactions (particles)"))
 			((Real,momentMagnitude,0,,"Moment magnitude of a failed interaction"))
 			((bool,firstMomentCalc,true,,"Flag for moment calculation"))
 			((Real,elapsedIter,0,,"number of elapsed iterations for moment calculation"))
@@ -101,6 +102,7 @@ class JCFpmPhys: public NormShearPhys {
 			((bool,interactionsAdded,false,,"have we added the ints associated with this event?"))
 			((int,nearbyFound,0,,"Count used to debug moment calc"))
 			((int,eventNumber,0,,"cluster event number"))
+			((int,temporalWindow,0,,"temporal window for the clustering algorithm"))
 			((Vector3r,momentCentroid,Vector3r::Zero(),,"centroid of the AE event (avg location of clustered breaks)"))
 			((vector<Interaction*>,clusterInts,,,"vector of pointers to the broken interactions nearby constituting a cluster"))		
 			((Interaction*,originalEvent,,,"pointer to the original interaction of a cluster"))	
@@ -141,7 +143,8 @@ class Ip2_JCFpmMat_JCFpmMat_JCFpmPhys: public IPhysFunctor{
 			((Real,strengthWeibullShapeParameter,0,,"Shape parameter used to distribute a bond strength factor (cStrength) according to weibull distribution (e.g. FnMax = cStrength*tensileStrength*crosssection). Activated for any value other than 0 (cannot be actiavted at same time as :yref:`tensileStrengthDeviation<JCFpmMat.tensStrengthDeviation>`"))
 			((Real,xSectionWeibullShapeParameter,0,,"Shape parameter used to generate interaction radii for the crossSectional areas (changing strength criteria only) according to Weibull distribution. Activated for any value other than 0. Needs to be combined with a :yref:`scale parameter<Ip2_JCFpmMat_JCFpmPhys.xSectionScaleParameter>` (takes precedence over :yref:`useAvgRadius<Ip2_JCFpmMat_JCFpmPhys.useAvgRadius>` and :yref:`totalAvgRadius<Ip2_JCFpmMat_JCFpmPhys.totalAvgRadius>`)"))
 			((Real,xSectionWeibullScaleParameter,0,,"Scale parameter used to generate interaction radii for the crosssectional areas (changing strength criteria only) according to Weibull distribution. Activated for any value other than 0. Needs to be combined with a :yref:`shape parameter<Ip2_JCFpmMat_JCFpmPhys.xSectionShapeParameter>` (takes precedence over :yref:`useAvgRadius<Ip2_JCFpmMat_JCFpmPhys.useAvgRadius>` and :yref:`totalAvgRadius<Ip2_JCFpmMat_JCFpmPhys.totalAvgRadius>`)"))
-			((Real,weibullCutOff,0.05,,"Factor that cuts off the smallest values of the weibull distributed interaction areas."))
+			((Real,weibullCutOffMin,0.05,,"Factor that cuts off the smallest values of the weibull distributed interaction areas."))
+			((Real,weibullCutOffMax,5,,"Factor that cuts off the largest values of the weibull distributed interaction areas."))
 			((Real,scaleFactor,1,,"Scale factor used to scale your simulation size up from the distribution determined by thin-section analysis (factors the radius generaated by :yref:`shape parameter<Ip2_JCFpmMat_JCFpmPhys.xSectionShapeParameter>` and :yref:`scale parameter<Ip2_JCFpmMat_JCFpmPhys.xSectionScaleParameter>`"))
 		);
 		
@@ -159,6 +162,8 @@ class Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM: public LawFunctor{
 		void computeCentroid(JCFpmPhys* phys);
 		void addUniqueIntsToList(JCFpmPhys* phys, JCFpmPhys* nearbyPhys);
 		void imposeMomentLaw(JCFpmPhys* phys, ScGeom6D* geom, Body* b1, Body* b2, Interaction* contact);
+		void computeKineticEnergy(JCFpmPhys* phys, Body* b1, Body* b2);
+		void computeTemporalWindow(JCFpmPhys* phys, Body* b1, Body* b2);
 		YADE_CLASS_BASE_DOC_ATTRS(Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM,LawFunctor,"Interaction law for cohesive frictional material, e.g. rock, possibly presenting joint surfaces, that can be mechanically described with a smooth contact logic [Ivars2011]_ (implemented in Yade in [Scholtes2012]_). See examples/jointedCohesiveFrictionalPM for script examples. Joint surface definitions (through stl meshes or direct definition with gts module) are illustrated there.",
 			((string,Key,"",,"string specifying the name of saved file 'cracks___.txt', when :yref:`recordCracks<Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM.recordCracks>` is true."))
 			((bool,cracksFileExist,false,,"if true (and if :yref:`recordCracks<Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM.recordCracks>`), data are appended to an existing 'cracksKey' text file; otherwise its content is reset."))
@@ -167,14 +172,15 @@ class Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM: public LawFunctor{
 			((bool,recordCracks,false,,"if true, data about interactions that lose their cohesive feature are stored in a text file cracksKey.txt (see :yref:`Key<Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM.Key>` and :yref:`cracksFileExist<Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM.cracksFileExist>`). It contains 9 columns: the break iteration, the 3 coordinates of the contact point, the type (1 means shear break, while 0 corresponds to tensile break), the ''cross section'' (mean radius of the 2 spheres) and the 3 coordinates of the contact normal."))
 			((bool,neverErase,false,,"Keep interactions even if particles go away from each other (only in case another constitutive law is in the scene (e.g. should be used with DFNFlow)"))
 			((bool,clusterMoments,true,,"computer clustered moments? (on by default"))
+			((bool,useStrainEnergy,true,,"use strain energy for moment magnitude estimatione (if false, use kinetic energy)"))
 			((bool,recordMoments,false,,"record clustered moments? (off by default)"))
 			((bool,imposeMoments,false,,"record clustered moments? (off by default)"))
 			((bool,computedCentroid,false,,"computer clustered moments?"))
 			((bool,extendSmoothJoint,false,,"New shear failures ahead of a hydraulically driven fracture tip behave according to smooth joint logic (experimental)"))
 			((Real,fracProximityFactor,8.,,"fracProximityFactor*avgIntractingRadius = max distance from fracture thatnew  shear failures will obey eSJM :yref:`eSJM<Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM.extendedSmoothJoint>` "))
 			((Real,momentRadiusFactor,5.,,"Average particle diameter multiplier for moment magnitude calculation"))
-			((Real,momentStrainFudgeFactor,1.,,"Fudge factor used by Hazzard and Damjanac 2013 to improve moment size accuracy (set to 1 by default)"))
-			((Real,elapsedIterFactor,20,,"Factor multiplied by particle diameter to yield allowable iterations"))
+			((Real,momentFudgeFactor,1.,,"Fudge factor used by Hazzard and Damjanac 2013 to improve moment size accuracy (set to 1 by default)"))
+			//((Real,elapsedIterFactor,20,,"Factor multiplied by particle diameter to yield allowable iterations"))
 			((Real,totalTensCracksE,0.,,"calculate the overall energy dissipated by interparticle microcracking in tension."))
                         ((Real,totalShearCracksE,0.,,"calculate the overall energy dissipated by interparticle microcracking in shear."))
 			((int,nbTensCracks,0,,"number of tensile microcracks."))
