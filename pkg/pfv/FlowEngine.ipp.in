@@ -51,6 +51,11 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 	  backgroundSolver=solver;
 	  backgroundCompleted=true;
 	}
+        // correct the pore volume to reflect a truer porosity (experimental rcaulk)
+        if (desiredPorosity != 0){
+	    actualPorosity = Shop::getPorosity(scene,-1);
+	    volumeCorrection = desiredPorosity/actualPorosity;
+        }
 	#ifdef YADE_OPENMP
 	solver->ompThreads = ompThreads>0? ompThreads : omp_get_max_threads();
 	#endif
@@ -634,6 +639,7 @@ Real TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 	const Vector3r& p2 = positionBufferCurrent[cell->vertex ( 2 )->info().id()].pos;
 	const Vector3r& p3 = positionBufferCurrent[cell->vertex ( 3 )->info().id()].pos;
 	Real volume = -inv6 * ((p0-p1).cross(p0-p2)).dot(p0-p3);
+	volume*= volumeCorrection;
 	if (/*debug && */volume<0) cerr<<"negative volume for an ordinary pore (temp warning, should still be safe)"<<endl; 
         if ( ! ( cell->info().volumeSign ) ) cell->info().volumeSign= ( volume>0 ) ?1:-1;
         return volume;
