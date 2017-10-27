@@ -152,24 +152,24 @@ class Ip2_JCFpmMat_JCFpmMat_JCFpmPhys: public IPhysFunctor{
 REGISTER_SERIALIZABLE(Ip2_JCFpmMat_JCFpmMat_JCFpmPhys);
 
 /** 2d functor creating the interaction law (Law2) based on SphereContactGeometry (ScGeom) and JCFpmPhys of 2 bodies, returning type JointedCohesiveFrictionalPM */
-class Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM: public LawFunctor{
+class Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM: public LawFunctor{
 	public:
 		virtual bool go(shared_ptr<IGeom>& _geom, shared_ptr<IPhys>& _phys, Interaction* I);
-		FUNCTOR2D(ScGeom6D,JCFpmPhys);
-		void checkForCluster(JCFpmPhys* phys, ScGeom6D* geom, Body* b1, Body* b2, Interaction* contact);
+		FUNCTOR2D(ScGeom,JCFpmPhys);
+		void checkForCluster(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact);
 		void clusterInteractions(JCFpmPhys* phys, Interaction* contact);
 		void computeClusteredMoment(JCFpmPhys* phys);
 		void computeCentroid(JCFpmPhys* phys);
 		void addUniqueIntsToList(JCFpmPhys* phys, JCFpmPhys* nearbyPhys);
-		void imposeMomentLaw(JCFpmPhys* phys, ScGeom6D* geom, Body* b1, Body* b2, Interaction* contact);
+		// void imposeMomentLaw(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact);
 		void computeKineticEnergy(JCFpmPhys* phys, Body* b1, Body* b2);
 		void computeTemporalWindow(JCFpmPhys* phys, Body* b1, Body* b2);
-		YADE_CLASS_BASE_DOC_ATTRS(Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM,LawFunctor,"Interaction law for cohesive frictional material, e.g. rock, possibly presenting joint surfaces, that can be mechanically described with a smooth contact logic [Ivars2011]_ (implemented in Yade in [Scholtes2012]_). See examples/jointedCohesiveFrictionalPM for script examples. Joint surface definitions (through stl meshes or direct definition with gts module) are illustrated there.",
-			((string,Key,"",,"string specifying the name of saved file 'cracks___.txt', when :yref:`recordCracks<Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM.recordCracks>` is true."))
-			((bool,cracksFileExist,false,,"if true (and if :yref:`recordCracks<Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM.recordCracks>`), data are appended to an existing 'cracksKey' text file; otherwise its content is reset."))
-			((bool,momentsFileExist,false,,"if true (and if :yref:`recordCracks<Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM.recordCracks>`), data are appended to an existing 'cracksKey' text file; otherwise its content is reset."))
+		YADE_CLASS_BASE_DOC_ATTRS(Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM,LawFunctor,"Interaction law for cohesive frictional material, e.g. rock, possibly presenting joint surfaces, that can be mechanically described with a smooth contact logic [Ivars2011]_ (implemented in Yade in [Scholtes2012]_). See examples/jointedCohesiveFrictionalPM for script examples. Joint surface definitions (through stl meshes or direct definition with gts module) are illustrated there.",
+			((string,Key,"",,"string specifying the name of saved file 'cracks___.txt', when :yref:`recordCracks<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.recordCracks>` is true."))
+			((bool,cracksFileExist,false,,"if true (and if :yref:`recordCracks<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.recordCracks>`), data are appended to an existing 'cracksKey' text file; otherwise its content is reset."))
+			((bool,momentsFileExist,false,,"if true (and if :yref:`recordCracks<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.recordCracks>`), data are appended to an existing 'cracksKey' text file; otherwise its content is reset."))
 			((bool,smoothJoint,false,,"if true, interactions of particles belonging to joint surface (:yref:`JCFpmPhys.isOnJoint`) are handled according to a smooth contact logic [Ivars2011]_, [Scholtes2012]_."))
-			((bool,recordCracks,false,,"if true, data about interactions that lose their cohesive feature are stored in a text file cracksKey.txt (see :yref:`Key<Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM.Key>` and :yref:`cracksFileExist<Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM.cracksFileExist>`). It contains 9 columns: the break iteration, the 3 coordinates of the contact point, the type (1 means shear break, while 0 corresponds to tensile break), the ''cross section'' (mean radius of the 2 spheres) and the 3 coordinates of the contact normal."))
+			((bool,recordCracks,false,,"if true, data about interactions that lose their cohesive feature are stored in a text file cracksKey.txt (see :yref:`Key<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.Key>` and :yref:`cracksFileExist<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.cracksFileExist>`). It contains 9 columns: the break iteration, the 3 coordinates of the contact point, the type (1 means shear break, while 0 corresponds to tensile break), the ''cross section'' (mean radius of the 2 spheres) and the 3 coordinates of the contact normal."))
 			((bool,neverErase,false,,"Keep interactions even if particles go away from each other (only in case another constitutive law is in the scene (e.g. should be used with DFNFlow)"))
 			((bool,clusterMoments,true,,"computer clustered moments? (on by default"))
 			((bool,useStrainEnergy,true,,"use strain energy for moment magnitude estimatione (if false, use kinetic energy)"))
@@ -177,7 +177,7 @@ class Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM: public LawFunctor{
 			((bool,imposeMoments,false,,"record clustered moments? (off by default)"))
 			((bool,computedCentroid,false,,"computer clustered moments?"))
 			((bool,extendSmoothJoint,false,,"New shear failures ahead of a hydraulically driven fracture tip behave according to smooth joint logic (experimental)"))
-			((Real,fracProximityFactor,8.,,"fracProximityFactor*avgIntractingRadius = max distance from fracture thatnew  shear failures will obey eSJM :yref:`eSJM<Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM.extendedSmoothJoint>` "))
+			((Real,fracProximityFactor,8.,,"fracProximityFactor*avgIntractingRadius = max distance from fracture thatnew  shear failures will obey eSJM :yref:`eSJM<Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM.extendedSmoothJoint>` "))
 			((Real,momentRadiusFactor,5.,,"Average particle diameter multiplier for moment magnitude calculation"))
 			((Real,momentFudgeFactor,1.,,"Fudge factor used by Hazzard and Damjanac 2013 to improve moment size accuracy (set to 1 by default)"))
 			//((Real,elapsedIterFactor,20,,"Factor multiplied by particle diameter to yield allowable iterations"))
@@ -196,4 +196,4 @@ class Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM: public LawFunctor{
 		);
 		DECLARE_LOGGER;	
 };
-REGISTER_SERIALIZABLE(Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM);
+REGISTER_SERIALIZABLE(Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM);

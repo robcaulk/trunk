@@ -6,20 +6,20 @@
 #include<core/Omega.hpp>
 #include<pkg/common/Sphere.hpp>
 
-YADE_PLUGIN((JCFpmMat)(JCFpmState)(JCFpmPhys)(Ip2_JCFpmMat_JCFpmMat_JCFpmPhys)(Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM));
+YADE_PLUGIN((JCFpmMat)(JCFpmState)(JCFpmPhys)(Ip2_JCFpmMat_JCFpmMat_JCFpmPhys)(Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM));
 
 
 /********************** Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM ****************************/
-CREATE_LOGGER(Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM);
+CREATE_LOGGER(Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM);
 
 static boost::mutex nearbyInts_mutex;
 static boost::mutex clusterInts_mutex;
 
-bool Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig, shared_ptr<IPhys>& ip, Interaction* contact){
+bool Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& ig, shared_ptr<IPhys>& ip, Interaction* contact){
 
 	const int &id1 = contact->getId1();
 	const int &id2 = contact->getId2();
-	ScGeom6D* geom = static_cast<ScGeom6D*>(ig.get()); 
+	ScGeom* geom = static_cast<ScGeom*>(ig.get()); 
 	JCFpmPhys* phys = static_cast<JCFpmPhys*>(ip.get());
 
 	Body* b1 = Body::byId(id1,scene).get();
@@ -252,88 +252,88 @@ bool Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::go(shared_ptr<IGeom>& 
 	scene->forces.addTorque(id1,(geom->radius1-0.5*geom->penetrationDepth)* geom->normal.cross(-f));
 	scene->forces.addTorque(id2,(geom->radius2-0.5*geom->penetrationDepth)* geom->normal.cross(-f));
 
-	if (imposeMoments) imposeMomentLaw(phys,geom,b1,b2,contact);
+//	if (imposeMoments) imposeMomentLaw(phys,geom,b1,b2,contact);
 	return true;
 }
 
-void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::imposeMomentLaw(JCFpmPhys* phys, ScGeom6D* geom, Body* b1, Body* b2, Interaction* contact){
-		/// Moment law  ///
-		const int &id1 = contact->getId1();
-		const int &id2 = contact->getId2();
-		const Real& dt = scene->dt;
-		State* de1 = Body::byId(id1,scene)->state.get();
-		State* de2 = Body::byId(id2,scene)->state.get();
-		if (phys->momentRotationLaw && (phys->isCohesive || always_use_moment_law)) {
-			if (!useIncrementalForm){
-				if (twist_creep) {
-					Real viscosity_twist = creep_viscosity * std::pow((2 * std::min(geom->radius1,geom->radius2)),2) / 16.0;
-					Real angle_twist_creeped = geom->getTwist() * (1 - scene->dt/viscosity_twist);
-					Quaternionr q_twist(AngleAxisr(geom->getTwist(),geom->normal));
-					Quaternionr q_twist_creeped(AngleAxisr(angle_twist_creeped,geom->normal));
-					Quaternionr q_twist_delta(q_twist_creeped * q_twist.conjugate());
-					geom->twistCreep = geom->twistCreep * q_twist_delta;
-				}
-				phys->moment_twist = (geom->getTwist()*phys->ktw)*geom->normal;
-				phys->moment_bending = geom->getBending() * phys->kr;
-			}	
-			else{ // Use incremental formulation to compute moment_twis and moment_bending (no twist_creep is applied)
-				if (twist_creep) throw std::invalid_argument("Law2_ScGeom6D_CohFrictPhys_CohesionMoment: no twist creep is included if the incremental form for the rotations is used.");
-				Vector3r relAngVel = geom->getRelAngVel(de1,de2,dt);
-				// *** Bending ***//
-				Vector3r relAngVelBend = relAngVel - geom->normal.dot(relAngVel)*geom->normal; // keep only the bending part
-				Vector3r relRotBend = relAngVelBend*dt; // relative rotation due to rolling behaviour	
-				// incremental formulation for the bending moment (as for the shear part)
-				Vector3r& momentBend = phys->moment_bending;
-				momentBend = geom->rotate(momentBend); // rotate moment vector (updated)
-				momentBend = momentBend-phys->kr*relRotBend;
-				// ----------------------------------------------------------------------------------------
-				// *** Torsion ***//
-				Vector3r relAngVelTwist = geom->normal.dot(relAngVel)*geom->normal;
-				Vector3r relRotTwist = relAngVelTwist*dt; // component of relative rotation along n  FIXME: sign?
-				// incremental formulation for the torsional moment
-				Vector3r& momentTwist = phys->moment_twist;
-				momentTwist = geom->rotate(momentTwist); // rotate moment vector (updated)
-				momentTwist = momentTwist-phys->ktw*relRotTwist; // FIXME: sign?
-			}
-			/// Plasticity ///
-			// limit rolling moment to the plastic value, if required
-			if (phys->maxRollPl>=0.){ // do we want to apply plasticity?
-				Real RollMax = phys->maxRollPl*phys->normalForce.norm();
-				if (!useIncrementalForm) LOG_WARN("If :yref:`Law2_ScGeom6D_CohFrictPhys_CohesionMoment::useIncrementalForm` is false, then plasticity will not be applied correctly (the total formulation would not reproduce irreversibility).");
-				Real scalarRoll = phys->moment_bending.norm();
-				if (scalarRoll>RollMax){ // fix maximum rolling moment
-					Real ratio = RollMax/scalarRoll;
-					phys->moment_bending *= ratio;
-					if (scene->trackEnergy){
-						Real bendingdissip=((1/phys->kr)*(scalarRoll-RollMax)*RollMax)/*active force*/;
-						if(bendingdissip>0) scene->energy->add(bendingdissip,"bendingDissip",bendingDissipIx,/*reset*/false);}
-				}
-			}
-			// limit twisting moment to the plastic value, if required
-			if (phys->maxTwistPl>=0.){ // do we want to apply plasticity?
-				Real TwistMax = phys->maxTwistPl*phys->normalForce.norm();
-				if (!useIncrementalForm) LOG_WARN("If :yref:`Law2_ScGeom6D_CohFrictPhys_CohesionMoment::useIncrementalForm` is false, then plasticity will not be applied correctly (the total formulation would not reproduce irreversibility).");
-				Real scalarTwist= phys->moment_twist.norm();
-				if (scalarTwist>TwistMax){ // fix maximum rolling moment
-					Real ratio = TwistMax/scalarTwist;
-					phys->moment_twist *= ratio;
-					if (scene->trackEnergy){
-						Real twistdissip=((1/phys->ktw)*(scalarTwist-TwistMax)*TwistMax)/*active force*/;
-						if(twistdissip>0) scene->energy->add(twistdissip,"twistDissip",twistDissipIx,/*reset*/false);}
-				}	
-			}
-			// Apply moments now
-			Vector3r moment = phys->moment_twist + phys->moment_bending;
-			scene->forces.addTorque(id1,-moment);
-			scene->forces.addTorque(id2, moment);			
-		}
-		/// Moment law END       ///
-}
+//void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::imposeMomentLaw(JCFpmPhys* phys, ScGeom6D* geom, Body* b1, Body* b2, Interaction* contact){
+//		/// Moment law  ///
+//		const int &id1 = contact->getId1();
+//		const int &id2 = contact->getId2();
+//		const Real& dt = scene->dt;
+//		State* de1 = Body::byId(id1,scene)->state.get();
+//		State* de2 = Body::byId(id2,scene)->state.get();
+//		if (phys->momentRotationLaw && (phys->isCohesive || always_use_moment_law)) {
+//			if (!useIncrementalForm){
+//				if (twist_creep) {
+//					Real viscosity_twist = creep_viscosity * std::pow((2 * std::min(geom->radius1,geom->radius2)),2) / 16.0;
+//					Real angle_twist_creeped = geom->getTwist() * (1 - scene->dt/viscosity_twist);
+//					Quaternionr q_twist(AngleAxisr(geom->getTwist(),geom->normal));
+//					Quaternionr q_twist_creeped(AngleAxisr(angle_twist_creeped,geom->normal));
+//					Quaternionr q_twist_delta(q_twist_creeped * q_twist.conjugate());
+//					geom->twistCreep = geom->twistCreep * q_twist_delta;
+//				}
+//				phys->moment_twist = (geom->getTwist()*phys->ktw)*geom->normal;
+//				phys->moment_bending = geom->getBending() * phys->kr;
+//			}	
+//			else{ // Use incremental formulation to compute moment_twis and moment_bending (no twist_creep is applied)
+//				if (twist_creep) throw std::invalid_argument("Law2_ScGeom6D_CohFrictPhys_CohesionMoment: no twist creep is included if the incremental form for the rotations is used.");
+//				Vector3r relAngVel = geom->getRelAngVel(de1,de2,dt);
+//				// *** Bending ***//
+//				Vector3r relAngVelBend = relAngVel - geom->normal.dot(relAngVel)*geom->normal; // keep only the bending part
+//				Vector3r relRotBend = relAngVelBend*dt; // relative rotation due to rolling behaviour	
+//				// incremental formulation for the bending moment (as for the shear part)
+//				Vector3r& momentBend = phys->moment_bending;
+//				momentBend = geom->rotate(momentBend); // rotate moment vector (updated)
+//				momentBend = momentBend-phys->kr*relRotBend;
+//				// ----------------------------------------------------------------------------------------
+//				// *** Torsion ***//
+//				Vector3r relAngVelTwist = geom->normal.dot(relAngVel)*geom->normal;
+//				Vector3r relRotTwist = relAngVelTwist*dt; // component of relative rotation along n  FIXME: sign?
+//				// incremental formulation for the torsional moment
+//				Vector3r& momentTwist = phys->moment_twist;
+//				momentTwist = geom->rotate(momentTwist); // rotate moment vector (updated)
+//				momentTwist = momentTwist-phys->ktw*relRotTwist; // FIXME: sign?
+//			}
+//			/// Plasticity ///
+//			// limit rolling moment to the plastic value, if required
+//			if (phys->maxRollPl>=0.){ // do we want to apply plasticity?
+//				Real RollMax = phys->maxRollPl*phys->normalForce.norm();
+//				if (!useIncrementalForm) LOG_WARN("If :yref:`Law2_ScGeom6D_CohFrictPhys_CohesionMoment::useIncrementalForm` is false, then plasticity will not be applied correctly (the total formulation would not reproduce irreversibility).");
+//				Real scalarRoll = phys->moment_bending.norm();
+//				if (scalarRoll>RollMax){ // fix maximum rolling moment
+//					Real ratio = RollMax/scalarRoll;
+//					phys->moment_bending *= ratio;
+//					if (scene->trackEnergy){
+//						Real bendingdissip=((1/phys->kr)*(scalarRoll-RollMax)*RollMax)/*active force*/;
+//						if(bendingdissip>0) scene->energy->add(bendingdissip,"bendingDissip",bendingDissipIx,/*reset*/false);}
+//				}
+//			}
+//			// limit twisting moment to the plastic value, if required
+//			if (phys->maxTwistPl>=0.){ // do we want to apply plasticity?
+//				Real TwistMax = phys->maxTwistPl*phys->normalForce.norm();
+//				if (!useIncrementalForm) LOG_WARN("If :yref:`Law2_ScGeom6D_CohFrictPhys_CohesionMoment::useIncrementalForm` is false, then plasticity will not be applied correctly (the total formulation would not reproduce irreversibility).");
+//				Real scalarTwist= phys->moment_twist.norm();
+//				if (scalarTwist>TwistMax){ // fix maximum rolling moment
+//					Real ratio = TwistMax/scalarTwist;
+//					phys->moment_twist *= ratio;
+//					if (scene->trackEnergy){
+//						Real twistdissip=((1/phys->ktw)*(scalarTwist-TwistMax)*TwistMax)/*active force*/;
+//						if(twistdissip>0) scene->energy->add(twistdissip,"twistDissip",twistDissipIx,/*reset*/false);}
+//				}	
+//			}
+//			// Apply moments now
+//			Vector3r moment = phys->moment_twist + phys->moment_bending;
+//			scene->forces.addTorque(id1,-moment);
+//			scene->forces.addTorque(id2, moment);			
+//		}
+//		/// Moment law END       ///
+//}
 
 
 
 
-void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::computeKineticEnergy
+void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeKineticEnergy
 	(JCFpmPhys* phys, Body* b1, Body* b2)
 	{
 	JCFpmState* state1 = YADE_CAST<JCFpmState*>(b1->state.get());
@@ -357,7 +357,7 @@ void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::computeKineticEnergy
 
 
 // function used to parse through new interactions and only add unique ints to cluster list	
-void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::addUniqueIntsToList(JCFpmPhys* phys, JCFpmPhys* nearbyPhys){
+void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::addUniqueIntsToList(JCFpmPhys* phys, JCFpmPhys* nearbyPhys){
 	unsigned int size = phys->nearbyInts.size();
 	for (unsigned int i=0; i<nearbyPhys->nearbyInts.size(); i++){
 		if (!nearbyPhys->nearbyInts[i]) continue;
@@ -381,7 +381,7 @@ void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::addUniqueIntsToList(JC
 
 
 // function used to check if the newly broken bond belongs in a cluster or not, if so attach to proper cluster and set appropriate flags
-void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::checkForCluster(JCFpmPhys* phys, ScGeom6D* geom, Body* b1, Body* b2, Interaction* contact){
+void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::checkForCluster(JCFpmPhys* phys, ScGeom* geom, Body* b1, Body* b2, Interaction* contact){
 
 	const shared_ptr<Shape>& sphere1 = b1->shape;
 	const shared_ptr<Shape>& sphere2 = b2->shape;
@@ -394,13 +394,13 @@ void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::checkForCluster(JCFpmP
 	FOREACH(const shared_ptr<Interaction>& I, *scene->interactions){
 	//#endif
 		JCFpmPhys* nearbyPhys;
-		const ScGeom6D* nearbyGeom;
+		const ScGeom* nearbyGeom;
 		if (!I || !I->geom.get() || !I->phys.get()) continue;
 		if (I && I->isReal() && JCFpmPhys::getClassIndexStatic()==I->phys->getClassIndex()){
 			nearbyPhys = YADE_CAST<JCFpmPhys*>(I->phys.get());
 			if (!nearbyPhys) continue;
 			if (I->geom.get() /*&& !nearbyPhys->momentBroken*/){
-				nearbyGeom = YADE_CAST<ScGeom6D*> (I->geom.get());
+				nearbyGeom = YADE_CAST<ScGeom*> (I->geom.get());
                     		if (!nearbyGeom) continue;
 				Vector3r nearbyInteractionLocation = nearbyGeom->contactPoint;
 				Vector3r proximityVector = nearbyInteractionLocation-brokenInteractionLocation;
@@ -437,7 +437,7 @@ void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::checkForCluster(JCFpmP
 }
 
 // function used for clustering broken bonds and nearby interactions
-void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::clusterInteractions(JCFpmPhys* phys, Interaction* contact){
+void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::clusterInteractions(JCFpmPhys* phys, Interaction* contact){
 	JCFpmPhys* originalPhys = YADE_CAST<JCFpmPhys*>(phys->originalEvent->phys.get());
 	addUniqueIntsToList(originalPhys, phys);  //NEED TO PUSHBACK ONLY UNIQUE INTS. we don't want a list with duplicate events (also updates reference strain)
 	phys->interactionsAdded = true;
@@ -451,7 +451,7 @@ void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::clusterInteractions(JC
 
 
 // function cycles through the list of interactions associated with a cluster and computes moment
-void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::computeClusteredMoment(JCFpmPhys* phys){
+void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeClusteredMoment(JCFpmPhys* phys){
 	Real totalMomentEnergy = 0;
 	Real momentEnergyChange = 0;
 	for (unsigned int i=0; i<phys->nearbyInts.size(); i++){
@@ -479,7 +479,7 @@ void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::computeClusteredMoment
 }
 
 // function used to compute the temporal window based on the PWave velocity of the medium
-void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::computeTemporalWindow
+void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeTemporalWindow
 	(JCFpmPhys* phys, Body* b1, Body* b2)
 	{
 	const shared_ptr<Shape>& sphere1 = b1->shape;
@@ -501,14 +501,14 @@ void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::computeTemporalWindow
 
 
 // function computes the centroid of a cluster
-void Law2_ScGeom6D_JCFpmPhys_JointedCohesiveFrictionalPM::computeCentroid(JCFpmPhys* phys){
+void Law2_ScGeom_JCFpmPhys_JointedCohesiveFrictionalPM::computeCentroid(JCFpmPhys* phys){
 	JCFpmPhys* originalPhys = YADE_CAST<JCFpmPhys*>(phys->originalEvent->phys.get());
 	Vector3r summedLocations = Vector3r::Zero();
 	for (unsigned int i=0; i<originalPhys->clusterInts.size(); i++){
-		ScGeom6D* nearbyGeom;
+		ScGeom* nearbyGeom;
 		if (!originalPhys->clusterInts[i]) continue;
 		if (originalPhys->clusterInts[i]->geom.get()){
-			nearbyGeom = YADE_CAST<ScGeom6D*> (originalPhys->clusterInts[i]->geom.get());
+			nearbyGeom = YADE_CAST<ScGeom*> (originalPhys->clusterInts[i]->geom.get());
 			Vector3r nearbyInteractionLocation = nearbyGeom->contactPoint;
 			summedLocations += nearbyInteractionLocation;
 		}
@@ -525,7 +525,7 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 	/* avoid updates of interaction if it already exists */
 	if( interaction->phys ) return; 
 
-	ScGeom6D* geom=dynamic_cast<ScGeom6D*>(interaction->geom.get());
+	ScGeom* geom=dynamic_cast<ScGeom*>(interaction->geom.get());
 	assert(geom);
 
 	const shared_ptr<JCFpmMat>& yade1 = YADE_PTR_CAST<JCFpmMat>(b1);
@@ -551,11 +551,11 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 	Real R1= geom->radius1;
 	Real R2= geom->radius2;
 
-	Real AlphaKr, AlphaKtw;
-	if (yade1->alphaKr && yade2->alphaKr) AlphaKr = 2.0*yade1->alphaKr*yade2->alphaKr/(yade1->alphaKr+yade2->alphaKr);
-	else AlphaKr = 0;
-	if (yade1->alphaKtw && yade2->alphaKtw) AlphaKtw = 2.0*yade1->alphaKtw*yade2->alphaKtw/(yade1->alphaKtw+yade2->alphaKtw);
-	else AlphaKtw=0;
+//	Real AlphaKr, AlphaKtw;
+//	if (yade1->alphaKr && yade2->alphaKr) AlphaKr = 2.0*yade1->alphaKr*yade2->alphaKr/(yade1->alphaKr+yade2->alphaKr);
+//	else AlphaKr = 0;
+//	if (yade1->alphaKtw && yade2->alphaKtw) AlphaKtw = 2.0*yade1->alphaKtw*yade2->alphaKtw/(yade1->alphaKtw+yade2->alphaKtw);
+//	else AlphaKtw=0;
 	
 	// control the radius used for cross-sectional area computation
 	if (useAvgRadius){	
@@ -576,13 +576,13 @@ void Ip2_JCFpmMat_JCFpmMat_JCFpmPhys::go(const shared_ptr<Material>& b1, const s
 	  contactPhysics->ks = 2.*E1*R1*v1*E2*R2*v2/(E1*R1*v1+E2*R2*v2);
 	contactPhysics->tanFrictionAngle = std::tan(std::min(f1,f2));
 
-	contactPhysics->kr = R1*R2*contactPhysics->kn*AlphaKr;
-	contactPhysics->ktw = R2*R1*contactPhysics->ks*AlphaKtw;
+//	contactPhysics->kr = R1*R2*contactPhysics->kn*AlphaKr;
+//	contactPhysics->ktw = R2*R1*contactPhysics->ks*AlphaKtw;
 
-	contactPhysics->maxRollPl = min(yade1->etaRoll*R1,yade2->etaRoll*R2);
-	contactPhysics->maxTwistPl = min(yade1->etaTwist*R2,yade2->etaTwist*R2);
+//	contactPhysics->maxRollPl = min(yade1->etaRoll*R1,yade2->etaRoll*R2);
+//	contactPhysics->maxTwistPl = min(yade1->etaTwist*R2,yade2->etaTwist*R2);
 
-	contactPhysics->momentRotationLaw=(yade1->momentRotationLaw && yade2->momentRotationLaw);
+//	contactPhysics->momentRotationLaw=(yade1->momentRotationLaw && yade2->momentRotationLaw);
 
 	if (stiffnessWeibullShapeParameter!=0) distributeStiffnesses(contactPhysics);
 	// cohesive properties

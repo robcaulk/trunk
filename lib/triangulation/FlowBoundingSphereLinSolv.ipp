@@ -102,6 +102,7 @@ FlowBoundingSphereLinSolv<_Tesselation,FlowType>::FlowBoundingSphereLinSolv(): F
 	#endif	
 	#ifdef CHOLMOD_LIB
 	cholmod_l_start(&com);
+	//com.maxGpuMemFraction = 0.8;
 	//com.maxGpuMemFraction = gpuMemFraction;  // allocate only half of the GPU memory because we have two solvers existing at a time.K
 	com.useGPU=1; //useGPU;
 	com.supernodal = CHOLMOD_AUTO; //CHOLMOD_SUPERNODAL;
@@ -311,12 +312,12 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
 			for(int k=0;k<T_nnz;k++){
 				add_T_entry(T,is[k]-1, js[k]-1, vs[k]);  // zero based?? Maybe incorrect		
 			}
-			cholmod_l_print_triplet(T, "triplet", &com);
+			//cholmod_l_print_triplet(T, "triplet", &com);
 			//cout << "cholmod triplets set and printed" << endl;
 			// convert triplet to sparse representation
 			Achol = cholmod_l_triplet_to_sparse(T, T->nnz, &com);
 			//cout << "cholmod sparse matrix created" << endl;
-			cholmod_l_print_sparse(Achol, "Achol", &com);
+			//cholmod_l_print_sparse(Achol, "Achol", &com);
 			cholmod_l_free_triplet(&T, &com);
 		#endif
 		}
@@ -638,8 +639,8 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::eigenSolve(Real dt)
 	Eigen::VectorXd eb(ncols); Eigen::VectorXd ex(ncols);
 	for (int k=0; k<ncols; k++) eb[k]=T_bv[k];
 	if (!factorizedEigenSolver) {
-		clock_t t;
-		t = clock();
+		//clock_t t;
+		//t = clock();
 		eSolver.setMode(Eigen::CholmodSupernodalLLt);
 		openblas_set_num_threads(omp_get_max_threads());
 		eSolver.compute(A);
@@ -649,8 +650,8 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::eigenSolve(Real dt)
 			eSolver.setMode(Eigen::CholmodLDLt);
 			eSolver.compute(A);
 		}
-		t = clock() -t;
-		cout << "Eigen Time to factorize CPU " << ((float)t)/CLOCKS_PER_SEC << endl;
+		//t = clock() -t;
+		//cout << "Eigen Time to factorize CPU " << ((float)t)/CLOCKS_PER_SEC << endl;
 		factorizedEigenSolver = true;
 	}
 	// backgroundAction only wants to factorize, no need to solve and copy to cells.
@@ -699,14 +700,14 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::cholmodSolve(Real dt)
 	//cout << "B_x is " << B_x << endl;
 	
 	if (!factorizedEigenSolver) {
-		clock_t t;
-		t = clock();
+		//clock_t t;
+		//t = clock();
 		openblas_set_num_threads(numFactorizeThreads); 
 		L = cholmod_l_analyze(Achol, &com);
 		//cholmod_change_factor(CHOLMOD_REAL,0, 1, 0, 0,L, &com);
 		cholmod_l_factorize(Achol, L, &com);
-		t = clock() - t;
-		cout << "CHOLMOD Time to factorize on GPU " << ((float)t)/CLOCKS_PER_SEC << endl;
+		//t = clock() - t;
+		//cout << "CHOLMOD Time to factorize on GPU " << ((float)t)/CLOCKS_PER_SEC << endl;
 		//cout << "Achol factorized" << endl;
 
 		// check the properties of factor
