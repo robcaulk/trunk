@@ -96,15 +96,17 @@ FlowBoundingSphereLinSolv<_Tesselation,FlowType>::FlowBoundingSphereLinSolv(): F
 	#ifdef EIGENSPARSE_LIB
 	factorizedEigenSolver=false;
 	factorizeOnly = false;
-	numFactorizeThreads=omp_get_max_threads();
-	numSolveThreads=omp_get_max_threads();
-	Eigen::initParallel();
+	numFactorizeThreads=1; //omp_get_max_threads();
+	numSolveThreads=1; //omp_get_max_threads();
+	//Eigen::initParallel();
 	#endif	
 	#ifdef CHOLMOD_LIB
+	//#define CHOLMOD_USE_GPU 1
 	cholmod_l_start(&com);
 	//com.maxGpuMemFraction = 0.8;
 	//com.maxGpuMemFraction = gpuMemFraction;  // allocate only half of the GPU memory because we have two solvers existing at a time.K
-	com.useGPU=1; //useGPU;
+	//com.useGPU=1;
+	com.maxGpuMemBytes = 3000000000;
 	com.supernodal = CHOLMOD_AUTO; //CHOLMOD_SUPERNODAL;
 	#endif
 }
@@ -293,7 +295,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
 		#endif //TAUCS_LIB
 		#ifdef EIGENSPARSE_LIB
 		} else if (useSolver==3 || useSolver==5){
-			Eigen::initParallel();
+			//Eigen::initParallel();
 			tripletList.clear(); tripletList.resize(T_nnz);
 			for(int k=0;k<T_nnz;k++) tripletList[k]=ETriplet(is[k]-1,js[k]-1,vs[k]);
  			A.resize(ncols,ncols);
@@ -349,6 +351,7 @@ void FlowBoundingSphereLinSolv<_Tesselation,FlowType>::copyCellsToLin (Real dt)
 	for (int ii=1; ii<=ncols; ii++) {
 		T_bv[ii-1]=T_b[ii-1]-T_cells[ii]->info().dv();
 		if (fluidBulkModulus>0) T_bv[ii-1] += T_cells[ii]->info().p()/(fluidBulkModulus*dt*T_cells[ii]->info().invVoidVolume());}
+	//cout << "copied cells to lin" <<endl;
 }
 
 /// For Gauss Seidel, we need the full matrix
@@ -572,9 +575,9 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::conjugateGradSolve(Real dt
 		openblas_set_num_threads(omp_get_max_threads());
 		omp_set_num_threads(omp_get_max_threads());
 		Eigen::setNbThreads(omp_get_max_threads());
-		cout << "About to compute A" << endl;
+		//cout << "About to compute A" << endl;
 		cg.compute(A);	
-		cout << "A computed" << endl;
+		//cout << "A computed" << endl;
 		//cg.setTolerance(tolerance);
 		//cg.setMaxIterations(200000);
 		//eSolver2.compute(A);
@@ -632,34 +635,43 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::conjugateGradSolve(Real dt
 template<class _Tesselation, class FlowType>
 int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::eigenSolve(Real dt)
 {
+	//cout << "made it into gaussseidel (eigensolve)"<<endl;
 #ifdef EIGENSPARSE_LIB
 	if (!isLinearSystemSet || (isLinearSystemSet && reApplyBoundaryConditions()) || !updatedRHS) ncols = setLinearSystem(dt);
+	//cout << "copying to cells" <<endl;
 	copyCellsToLin(dt);
 	//FIXME: we introduce new Eigen vectors, then we have to copy from/to c-arrays, can be optimized later
 	Eigen::VectorXd eb(ncols); Eigen::VectorXd ex(ncols);
 	for (int k=0; k<ncols; k++) eb[k]=T_bv[k];
 	if (!factorizedEigenSolver) {
-		//clock_t t;
-		//t = clock();
+		clock_t t;
+		t = clock();
+		//cout << "setting solver mode (supernodal)" << endl;
 		eSolver.setMode(Eigen::CholmodSupernodalLLt);
-		openblas_set_num_threads(omp_get_max_threads());
+		//cout << "about to set the openblas threads" << endl;
+		openblas_set_num_threads(numFactorizeThreads);
+		//cout << "about to compute A" << endl;
 		eSolver.compute(A);
+		
 		//Check result
 		if (eSolver.cholmod().status>0) {
 			cerr << "something went wrong in Cholesky factorization, use LDLt as fallback this time" << eSolver.cholmod().status << endl;
 			eSolver.setMode(Eigen::CholmodLDLt);
 			eSolver.compute(A);
 		}
-		//t = clock() -t;
-		//cout << "Eigen Time to factorize CPU " << ((float)t)/CLOCKS_PER_SEC << endl;
+		t = clock() -t;
+		cout << "Eigen Time to factorize CPU " << ((float)t)/CLOCKS_PER_SEC << endl;
 		factorizedEigenSolver = true;
 	}
 	// backgroundAction only wants to factorize, no need to solve and copy to cells.
 	if (!factorizeOnly){
 		//clock_t t;
 		//t = clock();
-		openblas_set_num_threads(omp_get_max_threads());
+		//cout << "about to set openblas threads" << endl;
+		openblas_set_num_threads(numSolveThreads);
+		//cout << "about to solve in eigen" << endl;
 		ex = eSolver.solve(eb);
+		//cout<< "done solving in eigen, about to copy solution back" <<endl;
 		for (int k=0; k<ncols; k++) T_x[k]=ex[k];
 		//t = clock() -t;
 		//cout << "Eigen Time to solve and copy to T_x " << ((float)t)/CLOCKS_PER_SEC << endl;
@@ -688,7 +700,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::cholmodSolve(Real dt)
 #ifdef CHOLMOD_LIB
 	if (!isLinearSystemSet || (isLinearSystemSet && reApplyBoundaryConditions()) || !updatedRHS) ncols = setLinearSystem(dt);
 	copyCellsToLin(dt);
-	
+	//cout << "about to reserve space for the B vector" <<endl;
 	cholmod_dense* B = cholmod_l_zeros(ncols, 1, Achol->xtype, &com);
 	//cout << "about to assign B->x " << endl;
 	double* B_x =(double *) B->x;
@@ -697,17 +709,19 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::cholmodSolve(Real dt)
 	//cholmod_factor* L = cholmod_analyze(Achol, &com);
 	//cout <<"A factored" << endl;
 	for (int k=0; k<ncols; k++) B_x[k]=T_bv[k];  //   B_x[k]=T_bv[k]; ((double*)B->x)
-	//cout << "B_x is " << B_x << endl;
+	//cout << "B_x is equal to T_bv"<< endl;
 	
 	if (!factorizedEigenSolver) {
-		//clock_t t;
-		//t = clock();
-		openblas_set_num_threads(numFactorizeThreads); 
+		clock_t t;
+		t = clock();
+		openblas_set_num_threads(omp_get_max_threads()); 
+		//cout << "About to analyze ACHOL" <<endl;
 		L = cholmod_l_analyze(Achol, &com);
 		//cholmod_change_factor(CHOLMOD_REAL,0, 1, 0, 0,L, &com);
+		//cout << "About to factorize in CHOLMOD GPU" << endl;
 		cholmod_l_factorize(Achol, L, &com);
-		//t = clock() - t;
-		//cout << "CHOLMOD Time to factorize on GPU " << ((float)t)/CLOCKS_PER_SEC << endl;
+		t = clock() - t;
+		cout << "CHOLMOD Time to factorize on GPU " << ((float)t)/CLOCKS_PER_SEC << endl;
 		//cout << "Achol factorized" << endl;
 
 		// check the properties of factor
@@ -723,7 +737,8 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::cholmodSolve(Real dt)
 		//clock_t t;
 		//t = clock();
 		//cout<<"is L supernodal? " << L->is_super << endl;
-		openblas_set_num_threads(numSolveThreads);
+		openblas_set_num_threads(omp_get_max_threads());
+		//cout << "about to solve" <<endl;
 		cholmod_dense* ex = cholmod_l_solve(CHOLMOD_A, L, B, &com);
 		
 		//cout <<"ex is " << ex << endl;

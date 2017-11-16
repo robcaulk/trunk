@@ -39,11 +39,16 @@ template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT 
 void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,solverT>::action()
 {
        if ( !isActivated ) return;
-       //	cout<<"Start action " <<endl;
+       	//cout<<"Start action " <<endl;
 	timingDeltas->start();
 	//cout << "Set Positions Buffer" << endl;
 	setPositionsBuffer(true);
 	timingDeltas->checkpoint ( "Position buffer" );
+	// correct the pore volume to reflect a truer porosity (experimental rcaulk)
+/*        if (desiredPorosity != 0){*/
+/*	    Real actualPorosity = Shop::getPorosityAlt();*/
+/*	    volumeCorrection = desiredPorosity/actualPorosity;*/
+/*        }	*/
         if (first) {
 	  if (multithread) setPositionsBuffer(false);
 	  buildTriangulation(pZero,*solver);
@@ -51,6 +56,8 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 	  backgroundSolver=solver;
 	  backgroundCompleted=true;
 	}
+        
+
 	#ifdef YADE_OPENMP
 	solver->ompThreads = ompThreads>0? ompThreads : omp_get_max_threads();
 	#endif
@@ -82,7 +89,9 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 	}
         ///compute flow and and forces here
 	if (pressureForce){
+		//cout << "About to solve" << endl;
 		solver->gaussSeidel(scene->dt);
+		//cout << "solved" <<endl;
 		timingDeltas->checkpoint ( "Gauss-Seidel (includes matrix construct and factorization in single-thread mode)" );
 		solver->computeFacetForcesWithCache();}
 		//cout<<"Finished computing facet forces" << endl;
@@ -167,11 +176,11 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 	 {
 	        if (updateTriangulation && !first) {
 			buildTriangulation (pZero, *solver);
-			//cout << "Triangulation built" << endl;
+			//cout << "Triangulation built for updatedTriangulation" << endl;
 			initializeVolumes(*solver);
-			//cout << "Volumes initialized" << endl;
+			//cout << "Volumes initialized for updatedTriangulation" << endl;
 			computeViscousForces(*solver);
-			//cout << "Viscous forces computed" << endl;
+			//cout << "Viscous forces computed for updatedTriangulation" << endl;
                		updateTriangulation = false;
 			epsVolCumulative=0;
 			retriangulationLastIter=0;
@@ -186,13 +195,17 @@ template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT 
 void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,solverT>::backgroundAction()
 {
 	if (useSolver<1) {LOG_ERROR("background calculations not available for Gauss-Seidel"); return;}
+	//cout << "About to build triangulation in background action" << endl;
         buildTriangulation ( pZero,*backgroundSolver );
 	//FIXME: GS is computing too much, we need only matrix factorization in fact  // rcaulk added factorizeOnly to factorize matrix only
+	//cout << "Built triangulation in background action, about to factorize only" << endl;
 	backgroundSolver->factorizeOnly = true;
 	backgroundSolver->gaussSeidel(scene->dt);
 	backgroundSolver->factorizeOnly = false;
+	//cout << "factorized only in background action" << endl;
 	//FIXME(2): and here we need only cached variables, not forces  // rcaulk this appears to be taken care of? 
 	backgroundSolver->computeFacetForcesWithCache(/*onlyCache?*/ true);
+	//cout << "computedFacetForcesWithCache in background action" << endl;
 // 	boost::this_thread::sleep(boost::posix_time::seconds(5));
  	backgroundCompleted = true;
 }
@@ -594,7 +607,7 @@ Real TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
         Real Vol1=0.5* ( ( A-BS ).cross ( B-BS ) ) [coord[1]]* ( 0.333333333* ( 2*B[coord[1]]+A[coord[1]] )-Wall_coordinate[1] );
         //second pyramid with triangular base (A,AS,BS)
         Real Vol2=0.5* ( ( AS-BS ).cross ( A-BS ) ) [coord[1]]* ( 0.333333333* ( B[coord[1]]+2*A[coord[1]] )-Wall_coordinate[1] );
-        return std::abs ( Vol1+Vol2 );
+        return std::abs ( (Vol1+Vol2) );
 }
 template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >
 template<class Cellhandle>
@@ -624,6 +637,7 @@ Real TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
         Real Volume = ( A[coord[0]]-Wall_coordinate[0] ) * ( A[coord[1]]-Wall_coordinate[1] ) * ( A[coord[2]]-Wall_coordinate[2] );
         return std::abs ( Volume );
 }
+
 template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >
 template<class Cellhandle>
 Real TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,solverT>::volumeCell ( Cellhandle cell )
