@@ -54,7 +54,7 @@ public:
       RTriangulation& Tri = Tes.Triangulation();
 
         static unsigned int number = 0;
-        char filename[80];
+        char filename[250];
 	mkdir(folder, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
         sprintf(filename,"%s/out_%d.vtk",folder,number++);
 	int firstReal=-1;
@@ -197,6 +197,7 @@ class DFNFlowEngine : public DFNFlowEngineT
 	Real getBranchIntensity() {return branchIntensity;}
 	Real getLeakOffRate() {return leakOffRate;}
 	Point injectionCellCenter;
+	vector<posData> DFNpositionBuffer;
 // 	void computeTotalFractureArea(Real totalFracureArea,bool printFractureTotalArea);/// Trying to get fracture's surface
 //	Real totalFracureArea; /// Trying to get fracture's surface
 
@@ -226,25 +227,26 @@ class DFNFlowEngine : public DFNFlowEngineT
 REGISTER_SERIALIZABLE(DFNFlowEngine);
 YADE_PLUGIN((DFNFlowEngine));
 
+//just to updat the installatione
 //In this version, we never update positions when !updatePositions, i.e. keep triangulating the same positions
-//void DFNFlowEngine::setPositionsBuffer(bool current)
-//{
-//	vector<posData>& buffer = current? positionBufferCurrent : positionBufferParallel;
-//	if (!updatePositions && buffer.size()>0) return;
-//	buffer.clear();
-//	buffer.resize(scene->bodies->size());
-//	shared_ptr<Sphere> sph ( new Sphere );
-//        const int Sph_Index = sph->getClassIndexStatic();
-//	FOREACH ( const shared_ptr<Body>& b, *scene->bodies ) {
-//		if (!b || ignoredBody==b->getId() || (mask>0 and !b->maskCompatible(mask))) continue;
-//                posData& dat = buffer[b->getId()];
-//		dat.id=b->getId();
-//		dat.pos=b->state->pos;
-//		dat.isSphere= (b->shape->getClassIndex() ==  Sph_Index);
-//		if (dat.isSphere) dat.radius = YADE_CAST<Sphere*>(b->shape.get())->radius;
-//		dat.exists=true;
-//	}
-//}
+void DFNFlowEngine::setPositionsBuffer(bool current)
+{
+	vector<posData>& buffer = current? positionBufferCurrent : positionBufferParallel;
+	if (!updatePositions && buffer.size()>0) return;
+	buffer.clear();
+	buffer.resize(scene->bodies->size());
+	shared_ptr<Sphere> sph ( new Sphere );
+        const int Sph_Index = sph->getClassIndexStatic();
+	FOREACH ( const shared_ptr<Body>& b, *scene->bodies ) {
+		if (!b || ignoredBody==b->getId() || (mask>0 and !b->maskCompatible(mask))) continue;
+                posData& dat = buffer[b->getId()];
+		dat.id=b->getId();
+		dat.pos=b->state->pos;
+		dat.isSphere= (b->shape->getClassIndex() ==  Sph_Index);
+		if (dat.isSphere) dat.radius = YADE_CAST<Sphere*>(b->shape.get())->radius;
+		dat.exists=true;
+	}
+}
 
 // function allows us to interpolate information about fractured/non fractured cells so we can identify newly fractured cells, monitor half width, and identify fracture tip
 void DFNFlowEngine::interpolateCrack(Tesselation& Tes, Tesselation& NewTes){
@@ -342,7 +344,7 @@ void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, R
         CVector halfWidthVector = cellCenter - injectionCellCenter;
         Real halfWidth = sqrt(halfWidthVector.squared_length());
         cell1->info().cellHalfWidth = halfWidth;
-		if (halfWidth > fractureHalfWidth){
+		if (halfWidth > fractureHalfWidth && cell1->info().p() > pZero+1.){
 			stepCrackHalfWidth = halfWidth;
 //			cell1->info().fractureTip = 1;
 		}
@@ -368,7 +370,7 @@ void DFNFlowEngine::trickPermeability(RTriangulation::Facet_circulator& facet, R
 			Real halfCrackArea = 0.25*sqrt(std::abs(cross_product(CellCentre1-p3,CellCentre2-p3).squared_length()));//
 			cell1->info().crackArea += halfCrackArea;
 			cell2->info().crackArea += halfCrackArea;
-			crackArea += 2*halfCrackArea;
+			crackArea += 2.*halfCrackArea;
 		}
 }
 

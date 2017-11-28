@@ -106,7 +106,7 @@ FlowBoundingSphereLinSolv<_Tesselation,FlowType>::FlowBoundingSphereLinSolv(): F
 	//com.maxGpuMemFraction = 0.8;
 	//com.maxGpuMemFraction = gpuMemFraction;  // allocate only half of the GPU memory because we have two solvers existing at a time.K
 	//com.useGPU=1;
-	com.maxGpuMemBytes = 3000000000;
+	com.maxGpuMemBytes = 2000000000;
 	com.supernodal = CHOLMOD_AUTO; //CHOLMOD_SUPERNODAL;
 	#endif
 }
@@ -304,8 +304,8 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
 		#ifdef CHOLMOD_LIB
 		} else if (useSolver==4){
 			//com.useGPU=useGPU;
-			const size_t nnz = T_nnz;
-			const size_t ncol = ncols;
+			//const size_t nnz = T_nnz;
+			//const size_t ncol = ncols;
 			//int T_stype = CHOLMOD_STYPE_UPPER_TRIANGLE;
 			//int T_xtype = CHOLMOD_REAL;		
 			cholmod_triplet* T = cholmod_l_allocate_triplet(ncols,ncols, T_nnz, 1, CHOLMOD_REAL, &com);		
@@ -714,7 +714,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::cholmodSolve(Real dt)
 	if (!factorizedEigenSolver) {
 		clock_t t;
 		t = clock();
-		openblas_set_num_threads(omp_get_max_threads()); 
+		//openblas_set_num_threads(omp_get_max_threads()); 
 		//cout << "About to analyze ACHOL" <<endl;
 		L = cholmod_l_analyze(Achol, &com);
 		//cholmod_change_factor(CHOLMOD_REAL,0, 1, 0, 0,L, &com);
@@ -737,7 +737,7 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::cholmodSolve(Real dt)
 		//clock_t t;
 		//t = clock();
 		//cout<<"is L supernodal? " << L->is_super << endl;
-		openblas_set_num_threads(omp_get_max_threads());
+		//openblas_set_num_threads(omp_get_max_threads());
 		//cout << "about to solve" <<endl;
 		cholmod_dense* ex = cholmod_l_solve(CHOLMOD_A, L, B, &com);
 		
