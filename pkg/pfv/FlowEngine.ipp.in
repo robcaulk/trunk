@@ -36,6 +36,20 @@ unsigned int TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tess
 }
 
 template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >
+void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,solverT>::clearAllBreaks()
+{
+	FOREACH(const shared_ptr<Interaction>& I, *scene->interactions){
+		if (!I || !I->phys.get()) continue;
+		if (I->isReal() && JCFpmPhys::getClassIndexStatic()==I->phys->getClassIndex()) {
+			JCFpmPhys* jcfpmphys = YADE_CAST<JCFpmPhys*>(I->phys.get());
+			if (!jcfpmphys) continue;
+			jcfpmphys->breakOccurred = false;
+		}	
+	}
+}
+
+
+template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >
 void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,solverT>::action()
 {
        if ( !isActivated ) return;
@@ -45,10 +59,10 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 	setPositionsBuffer(true);
 	timingDeltas->checkpoint ( "Position buffer" );
 	// correct the pore volume to reflect a truer porosity (experimental rcaulk)
-/*        if (desiredPorosity != 0){*/
-/*	    Real actualPorosity = Shop::getPorosityAlt();*/
-/*	    volumeCorrection = desiredPorosity/actualPorosity;*/
-/*        }	*/
+        if (desiredPorosity != 0){
+	    Real actualPorosity = Shop::getPorosityAlt();
+	    volumeCorrection = desiredPorosity/actualPorosity;
+        }
         if (first) {
 	  if (multithread) setPositionsBuffer(false);
 	  buildTriangulation(pZero,*solver);
@@ -71,22 +85,28 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 	if (!updateTriangulation) updateTriangulation = // If not already set true by another function of by the user, check conditions
 		(defTolerance>0 && epsVolCumulative > defTolerance) || retriangulationLastIter>meshUpdateInterval;
 	
-	if (breakControlledRemesh){
-	bool foundBreak = false;
+	if (breakControlledRemesh > 0){
+		int breakCount = 0;
 		FOREACH(const shared_ptr<Interaction>& I, *scene->interactions){
 			if (!I || !I->phys.get()) continue;
 			if (I->isReal() && JCFpmPhys::getClassIndexStatic()==I->phys->getClassIndex()) {
 				JCFpmPhys* jcfpmphys = YADE_CAST<JCFpmPhys*>(I->phys.get());
 				if (!jcfpmphys) continue;
-				if (jcfpmphys->breakOccurred && !foundBreak){
-					updateTriangulation = true;
+				if (jcfpmphys->breakOccurred && breakCount < breakControlledRemesh){
+					//jcfpmphys->breakOccurred = false;
+					breakCount += 1;
+				
+				} else if (jcfpmphys->breakOccurred && breakCount >= breakControlledRemesh) {
 					jcfpmphys->breakOccurred = false;
-					foundBreak = true;
+					updateTriangulation = true;
+					clearAllBreaks();
+					break;
+					
 				}
-			else if (jcfpmphys->breakOccurred && foundBreak) jcfpmphys->breakOccurred = false;
 			}
 		}
 	}
+
         ///compute flow and and forces here
 	if (pressureForce){
 		//cout << "About to solve" << endl;
@@ -572,7 +592,7 @@ Real TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
                 }
         }
         Real Volume = 0.5* ( ( V[0]-V[1] ).cross ( V[0]-V[2] ) ) [solver->boundary ( b ).coordinate] * ( 0.33333333333* ( V[0][solver->boundary ( b ).coordinate]+ V[1][solver->boundary ( b ).coordinate]+ V[2][solver->boundary ( b ).coordinate] ) - Wall_coordinate );
-        return std::abs ( Volume );
+        return std::abs ( Volume * volumeCorrection );
 }
 template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >
 template<class Cellhandle>
@@ -607,7 +627,7 @@ Real TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
         Real Vol1=0.5* ( ( A-BS ).cross ( B-BS ) ) [coord[1]]* ( 0.333333333* ( 2*B[coord[1]]+A[coord[1]] )-Wall_coordinate[1] );
         //second pyramid with triangular base (A,AS,BS)
         Real Vol2=0.5* ( ( AS-BS ).cross ( A-BS ) ) [coord[1]]* ( 0.333333333* ( B[coord[1]]+2*A[coord[1]] )-Wall_coordinate[1] );
-        return std::abs ( (Vol1+Vol2) );
+        return std::abs ( (Vol1+Vol2) * volumeCorrection );
 }
 template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >
 template<class Cellhandle>
@@ -635,7 +655,7 @@ Real TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
                 }
         }
         Real Volume = ( A[coord[0]]-Wall_coordinate[0] ) * ( A[coord[1]]-Wall_coordinate[1] ) * ( A[coord[2]]-Wall_coordinate[2] );
-        return std::abs ( Volume );
+        return std::abs ( Volume * volumeCorrection );
 }
 
 template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >
@@ -650,7 +670,7 @@ Real TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 	Real volume = -inv6 * ((p0-p1).cross(p0-p2)).dot(p0-p3);
 	if (/*debug && */volume<0) cerr<<"negative volume for an ordinary pore (temp warning, should still be safe)"<<endl; 
         if ( ! ( cell->info().volumeSign ) ) cell->info().volumeSign= ( volume>0 ) ?1:-1;
-        return volume;
+        return volume*volumeCorrection;
 }
 template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >
 void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,solverT>::computeViscousForces ( Solver& flow )

@@ -24,7 +24,6 @@
 #include <CGAL/circulator.h>
 #include <CGAL/number_utils.h>
 #include <boost/static_assert.hpp>
-
 //This include from yade let us use Eigen types
 #include <lib/base/Math.hpp>
 
