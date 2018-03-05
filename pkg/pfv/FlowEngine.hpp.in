@@ -85,6 +85,10 @@ class TemplateFlowEngine_@TEMPLATE_FLOW_NAME@ : public PartialEngine
 		void setForceMetis (bool force);
 		bool getForceMetis ();
 		#endif
+		#ifdef CHOLMOD_LIB
+		cholmod_factor factor;
+		bool analyzeFactor;
+		#endif
 		void triangulate (Solver& flow);
 		void clearAllBreaks();
 		void addBoundary (Solver& flow);
@@ -224,6 +228,7 @@ class TemplateFlowEngine_@TEMPLATE_FLOW_NAME@ : public PartialEngine
 		bool	metisUsed() {return bool(solver->eSolver.cholmod().called_nd);}
 		#endif
 
+
 		virtual ~TemplateFlowEngine_@TEMPLATE_FLOW_NAME@();
 		virtual void action();
 		virtual void backgroundAction();
@@ -302,6 +307,8 @@ class TemplateFlowEngine_@TEMPLATE_FLOW_NAME@ : public PartialEngine
 		((int, numSolveThreads, 1,,"number of openblas threads in the solve phase."))
 		((int, numFactorizeThreads, 1,,"number of openblas threads in the factorization phase"))
 		#endif
+		((int, orderingMethod, 2,,"CHOLMOD ordering method.  2 - metis by default. Refer to CHOLMOD userguide for other options"))
+		((int, nOrderingMethods, 1,,"Number of ordering methods to try. 1 by default. Refer to CHOLMOD userguide for other options"))
 		((vector<Real>, boundaryPressure,vector<Real>(),,"values defining pressure along x-axis for the top surface. See also :yref:`@TEMPLATE_FLOW_NAME@::boundaryXPos`"))
 		((vector<Real>, boundaryXPos,vector<Real>(),,"values of the x-coordinate for which pressure is defined. See also :yref:`@TEMPLATE_FLOW_NAME@::boundaryPressure`"))
 		((string,blockHook,"",,"Python command to be run when remeshing. Anticipated usage: define blocked cells (see also :yref:`TemplateFlowEngine_@TEMPLATE_FLOW_NAME@.blockCell`), or apply exotic types of boundary conditions which need to visit the newly built mesh"))

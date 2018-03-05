@@ -15,6 +15,7 @@
 //For pyRunString
 #include<lib/pyutil/gil.hpp>
 #include<pkg/dem/JointedCohesiveFrictionalPM.hpp>
+#include <sys/time.h>
 template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >
 TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,solverT>::~TemplateFlowEngine_@TEMPLATE_FLOW_NAME@() {}
 
@@ -278,27 +279,30 @@ Real TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >
 void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,solverT>::initSolver ( FlowSolver& flow )
 {
-       	flow.Vtotalissimo=0; flow.VSolidTot=0; flow.vPoral=0; flow.sSolidTot=0;
-        flow.slipBoundary=slipBoundary;
-        flow.kFactor = permeabilityFactor;
-        flow.debugOut = debug;
-        flow.useSolver = useSolver;
+	flow.Vtotalissimo=0; flow.VSolidTot=0; flow.vPoral=0; flow.sSolidTot=0;
+	flow.slipBoundary=slipBoundary;
+	flow.kFactor = permeabilityFactor;
+	flow.debugOut = debug;
+	flow.useSolver = useSolver;
 	#ifdef EIGENSPARSE_LIB
 	flow.numSolveThreads = numSolveThreads;
 	flow.numFactorizeThreads = numFactorizeThreads;
 	#endif
 	flow.meanKStat = meanKStat;
-        flow.viscosity = viscosity;
-        flow.tolerance=tolerance;
-        flow.relax=relax;
-        flow.clampKValues = clampKValues;
+	flow.viscosity = viscosity;
+	flow.tolerance=tolerance;
+	flow.relax=relax;
+	flow.clampKValues = clampKValues;
+	//flow.factorizeOnly = false;
 	flow.maxKdivKmean = maxKdivKmean;
 	flow.minKdivKmean = minKdivKmean;
-        flow.meanKStat = meanKStat;
-        flow.permeabilityMap = permeabilityMap;
-        flow.fluidBulkModulus = fluidBulkModulus;
-//         flow.tesselation().Clear();
-        flow.tesselation().maxId=-1;
+	flow.meanKStat = meanKStat;
+	flow.permeabilityMap = permeabilityMap;
+	flow.fluidBulkModulus = fluidBulkModulus;
+	flow.nOrderingMethods=nOrderingMethods;
+	flow.orderingMethod=orderingMethod;
+//	flow.tesselation().Clear();
+	flow.tesselation().maxId=-1;
 	flow.blockedCells.clear();
         flow.xMin = 1000.0, flow.xMax = -10000.0, flow.yMin = 1000.0, flow.yMax = -10000.0, flow.zMin = 1000.0, flow.zMax = -10000.0;
 }
@@ -456,8 +460,17 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 // 	TW.insertSceneSpheres();//TW is now really inserting in TemplateFlowEngine_@TEMPLATE_FLOW_NAME@, using the faster insert(begin,end)
 // 	TW.Tes = NULL;//otherwise, Tes would be deleted by ~TesselationWrapper() at the end of the function.
 ///Using one-by-one insertion
+	//struct timeval start, end;
+	//gettimeofday(&start,NULL);
 	vector<posData>& buffer = multithread ? positionBufferParallel : positionBufferCurrent;
+	#ifdef YADE_OPENMP
+	const long size=buffer.size();
+	#pragma omp parallel for num_threads(ompThreads>0 ? ompThreads : 1)
+	for(long i=0; i<size; i++){
+		const posData& b = buffer[i];
+	#else
 	FOREACH ( const posData& b, buffer ) {
+	#endif
 		if ( !b.exists || b.id==ignoredBody ) continue;
 		if ( b.isSphere || b.isClump ) flow.tesselation().insert ( b.pos[0], b.pos[1], b.pos[2], b.radius, b.id );
 	}
@@ -469,6 +482,8 @@ void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,
 	flow.shearLubricationBodyStress.resize ( flow.tesselation().maxId+1 );
 	flow.normalLubricationForce.resize ( flow.tesselation().maxId+1 );
 	flow.normalLubricationBodyStress.resize ( flow.tesselation().maxId+1 );
+	//gettimeofday(&end,NULL);
+	//if (debug) cout << "Time to triangulate " << ((end.tv_sec * 1000000  + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec   )) << endl;
 }
 template< class _CellInfo, class _VertexInfo, class _Tesselation, class solverT >
 void TemplateFlowEngine_@TEMPLATE_FLOW_NAME@<_CellInfo,_VertexInfo,_Tesselation,solverT>::initializeVolumes ( Solver& flow )

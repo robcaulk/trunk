@@ -19,6 +19,7 @@
 #include <assert.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/time.h>
 
 #ifdef XVIEW
 //#include "Vue3D.h" //FIXME implicit dependencies will look for this class (out of tree) even ifndef XVIEW
@@ -98,15 +99,19 @@ FlowBoundingSphereLinSolv<_Tesselation,FlowType>::FlowBoundingSphereLinSolv(): F
 	factorizeOnly = false;
 	numFactorizeThreads=1; //omp_get_max_threads();
 	numSolveThreads=1; //omp_get_max_threads();
+	//ompThreads=omp_get_max_threads();
 	//Eigen::initParallel();
 	#endif	
 	#ifdef CHOLMOD_LIB
-	//#define CHOLMOD_USE_GPU 1
 	cholmod_l_start(&com);
+	com.nmethods= 1; // nOrderingMethods; //1;
+	com.method[0].ordering = CHOLMOD_METIS; // orderingMethod; //CHOLMOD_METIS;
+	//com.postorder= true;
+
 	//com.maxGpuMemFraction = 0.8;
 	//com.maxGpuMemFraction = gpuMemFraction;  // allocate only half of the GPU memory because we have two solvers existing at a time.K
 	//com.useGPU=1;
-	com.maxGpuMemBytes = 2000000000;
+	//com.maxGpuMemBytes = 2000000000;
 	com.supernodal = CHOLMOD_AUTO; //CHOLMOD_SUPERNODAL;
 	#endif
 }
@@ -166,6 +171,9 @@ void FlowBoundingSphereLinSolv<_Tesselation,FlowType>::resetLinearSystem() {
 template<class _Tesselation, class FlowType>
 int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
 {
+
+	struct timeval start, end;
+	gettimeofday (&start, NULL);
 
 	RTriangulation& Tri = T[currentTes].Triangulation();
 	int n_cells=Tri.number_of_finite_cells();
@@ -250,6 +258,9 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
 			}
 		}
 	}
+	gettimeofday (&end, NULL);
+	cout << "CHOLMOD Time to build system of linear equations (us) " << ((end.tv_sec *1000000   + end.tv_usec ) - (start.tv_sec * 1000000 + start.tv_usec )) << endl;;
+	
 	updatedRHS = true;
 	if (!isLinearSystemSet) {
 		if (useSolver==1 || useSolver==2){
@@ -308,19 +319,30 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::setLinearSystem(Real dt)
 			//const size_t ncol = ncols;
 			//int T_stype = CHOLMOD_STYPE_UPPER_TRIANGLE;
 			//int T_xtype = CHOLMOD_REAL;		
+			struct timeval start, end;
+			gettimeofday (&start, NULL);
 			cholmod_triplet* T = cholmod_l_allocate_triplet(ncols,ncols, T_nnz, 1, CHOLMOD_REAL, &com);		
 			//cout << "cholmod triplets matrix allocated" << endl;
 			// set all the values for the cholmod triplet matrix
+			//#ifdef YADE_OPENMP
+			//#pragma omp parallel for
+			//#endif
 			for(int k=0;k<T_nnz;k++){
-				add_T_entry(T,is[k]-1, js[k]-1, vs[k]);  // zero based?? Maybe incorrect		
+			add_T_entry(T,is[k]-1, js[k]-1, vs[k]);		
 			}
 			//cholmod_l_print_triplet(T, "triplet", &com);
-			//cout << "cholmod triplets set and printed" << endl;
 			// convert triplet to sparse representation
 			Achol = cholmod_l_triplet_to_sparse(T, T->nnz, &com);
-			//cout << "cholmod sparse matrix created" << endl;
-			//cholmod_l_print_sparse(Achol, "Achol", &com);
+			//freopen("./matrixStats.txt","a",stdout);
+			cholmod_l_print_sparse(Achol, "Achol", &com);
+			//printf ("/n");
+			//fclose (stdout);
 			cholmod_l_free_triplet(&T, &com);
+			gettimeofday (&end, NULL);
+
+			cout << "CHOLMOD Time to allocate matrix (us) " << ((end.tv_sec *1000000   + end.tv_usec ) - (start.tv_sec * 1000000 + start.tv_usec )) << endl;;
+
+
 		#endif
 		}
 		
@@ -712,16 +734,30 @@ int FlowBoundingSphereLinSolv<_Tesselation,FlowType>::cholmodSolve(Real dt)
 	//cout << "B_x is equal to T_bv"<< endl;
 	
 	if (!factorizedEigenSolver) {
-		clock_t t;
-		t = clock();
+		//clock_t t;
+		//t = clock();
+		struct timeval start, end;
+		//gettimeofday (&start, Null);
+		
 		//openblas_set_num_threads(omp_get_max_threads()); 
 		//cout << "About to analyze ACHOL" <<endl;
+		gettimeofday (&start, NULL);
 		L = cholmod_l_analyze(Achol, &com);
+		gettimeofday(&end,NULL);
+		cout << "CHOLMOD Time to analyze " << ((end.tv_sec * 1000000  + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec   )) << endl;
+		//t = clock() - t;
+		//cout << "CHOLMOD Time to analyze " << ((float)t)/CLOCKS_PER_SEC << endl;
+		cout << "Selected ordering " << com.selected << endl; 
+		
+		gettimeofday (&start, NULL);
+		//t = clock();
 		//cholmod_change_factor(CHOLMOD_REAL,0, 1, 0, 0,L, &com);
 		//cout << "About to factorize in CHOLMOD GPU" << endl;
 		cholmod_l_factorize(Achol, L, &com);
-		t = clock() - t;
-		cout << "CHOLMOD Time to factorize on GPU " << ((float)t)/CLOCKS_PER_SEC << endl;
+		//t = clock() - t;
+		gettimeofday(&end,NULL);
+		cout << "CHOLMOD Time to factorize " << ((end.tv_sec * 1000000  + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec   )) << endl;
+		
 		//cout << "Achol factorized" << endl;
 
 		// check the properties of factor

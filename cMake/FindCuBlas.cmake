@@ -6,9 +6,9 @@
 #  CUDART
 #  CUDA INCLUDE NEEDED???
 
-FIND_LIBRARY(CUBLAS_LIBRARY NAMES libcublas.so PATHS /usr/local/cuda-8.0/lib64 )
-FIND_LIBRARY(CUDART_LIBRARY NAMES libcudart.so PATHS /usr/local/cuda-8.0/lib64 )
-FIND_PATH(CUDA_INCLUDE_DIR cuda.h PATHS /usr/local/cuda-8.0/include)
+FIND_LIBRARY(CUBLAS_LIBRARY NAMES libcublas.so PATHS /usr/local/cuda/lib64 )
+FIND_LIBRARY(CUDART_LIBRARY NAMES libcudart.so PATHS /usr/local/cuda/lib64 )
+FIND_PATH(CUDA_INCLUDE_DIR cuda.h PATHS /usr/local/cuda/include)
 
 # handle the QUIETLY and REQUIRED arguments and set LOKI_FOUND to TRUE if
 # all listed variables are TRUE

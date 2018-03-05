@@ -61,6 +61,8 @@ public:
 	using FlowType::resetRHS;
 	using FlowType::factorizeOnly; 
 	using FlowType::useGPU;
+	using FlowType::orderingMethod;
+	using FlowType::nOrderingMethods;
 
 	//! TAUCS DECs
 	vector<FiniteCellsIterator> orderedCells;
@@ -95,10 +97,10 @@ public:
 	cholmod_common com;
 	void add_T_entry(cholmod_triplet* T, long r, long c, double x)
 	{
-		size_t k = T->nnz;
-		((long*)T->i)[k] = r;
-		((long*)T->j)[k] = c;
-		((double*)T->x)[k] = x;
+		size_t l = T->nnz;
+		((long*)T->i)[l] = r;
+		((long*)T->j)[l] = c;
+		((double*)T->x)[l] = x;
 		T->nnz++;
 	}
 	#endif

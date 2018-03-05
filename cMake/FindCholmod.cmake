@@ -9,15 +9,15 @@
 #  CCOLAMD_LIBRARY 	      - needed by CHOLMOD
 #  CAMD_LIBRARY 	        - needed by CHOLMOD
 
-FIND_LIBRARY(CHOLMOD_LIBRARIES NAMES libcholmod.so PATHS /usr/local/SuiteSparse/lib)
+FIND_LIBRARY(CHOLMOD_LIBRARIES NAMES libcholmod.so PATHS /usr/local/SuiteSparse-4.6.0-beta/lib)
 
-FIND_LIBRARY(AMD_LIBRARY NAMES amd libamd PATHS /usr/local/SuiteSparse/lib)
-FIND_LIBRARY(CAMD_LIBRARY NAMES camd libcmd PATHS /usr/local/SuiteSparse/lib)
-FIND_LIBRARY(COLAMD_LIBRARY NAMES colamd libcolamd PATHS /usr/local/SuiteSparse/lib)
-FIND_LIBRARY(CCOLAMD_LIBRARY NAMES ccolamd libccolamd PATHS /usr/local/SuiteSparse/lib)
-FIND_LIBRARY(SUITESPARSE_LIBRARY NAMES SuiteSparse libsuitesparseconfig.so PATHS /usr/local/SuiteSparse/lib)
+FIND_LIBRARY(AMD_LIBRARY NAMES amd libamd PATHS /usr/local/SuiteSparse-4.6.0-beta/lib)
+FIND_LIBRARY(CAMD_LIBRARY NAMES camd libcmd PATHS /usr/local/SuiteSparse-4.6.0-beta/lib)
+FIND_LIBRARY(COLAMD_LIBRARY NAMES colamd libcolamd PATHS /usr/local/SuiteSparse-4.6.0-beta/lib)
+FIND_LIBRARY(CCOLAMD_LIBRARY NAMES ccolamd libccolamd PATHS /usr/local/SuiteSparse-4.6.0-beta/lib)
+FIND_LIBRARY(SUITESPARSE_LIBRARY NAMES SuiteSparse libsuitesparseconfig.so PATHS /usr/local/SuiteSparse-4.6.0-beta/lib)
 
-FIND_PATH(CHOLMOD_INCLUDE_DIR cholmod.h PATH /usr/local/SuiteSparse/include)
+FIND_PATH(CHOLMOD_INCLUDE_DIR cholmod.h PATH /usr/local/SuiteSparse-4.6.0-beta/include)
 
 MESSAGE(STATUS "FOUND CHOLDMOD " ${CHOLMOD_LIBRARIES})
 MESSAGE(STATUS "FOUND CAMD " ${CAMD_LIBRARY})
